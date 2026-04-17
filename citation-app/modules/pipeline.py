@@ -1,6 +1,6 @@
 """
 Full analysis pipeline orchestrator.
-Connects all modules end-to-end.
+Input: DOI → Output: complete contamination analysis result.
 """
 
 import logging
@@ -16,6 +16,7 @@ from .risk_engine import (
     is_high_risk_by_keywords,
     classify_risk_level,
     rank_papers,
+    compute_analytics,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,15 +24,16 @@ logger = logging.getLogger(__name__)
 
 def run_analysis(doi_input: str, title_hint: str | None = None) -> dict[str, Any]:
     """
-    Run the full citation contamination analysis.
+    Run the full citation contamination analysis pipeline.
 
-    Returns a result dict:
+    Returns:
         success: bool
         error: str | None
         root_doi: str | None
         retraction: dict
         graph: nx.DiGraph
         papers: list[dict]  — ranked paper records
+        analytics: dict     — summary statistics
         node_count: int
         edge_count: int
     """
@@ -44,21 +46,21 @@ def run_analysis(doi_input: str, title_hint: str | None = None) -> dict[str, Any
             "retraction": {"is_retracted": False, "reason": None, "year": None},
             "graph": nx.DiGraph(),
             "papers": [],
+            "analytics": {},
             "node_count": 0,
             "edge_count": 0,
         }
 
-    logger.info(f"Analyzing DOI: {root_doi}")
+    logger.info(f"[Pipeline] Analyzing DOI: {root_doi}")
 
     retraction = check_retraction(root_doi, title=title_hint)
-    logger.info(f"Retraction status: {retraction}")
+    logger.info(f"[Pipeline] Retraction status: {retraction}")
 
     graph = build_citation_graph(root_doi)
     depths = get_node_depths(graph)
-
     all_dois = list(graph.nodes)
 
-    logger.info(f"Fetching metadata for {len(all_dois)} DOIs...")
+    logger.info(f"[Pipeline] Fetching metadata for {len(all_dois)} DOIs …")
     metadata_map = fetch_metadata_batch(all_dois)
 
     papers = []
@@ -66,18 +68,22 @@ def run_analysis(doi_input: str, title_hint: str | None = None) -> dict[str, Any
         if doi == root_doi:
             continue
 
-        meta = metadata_map.get(doi, {})
-        depth = depths.get(doi, 1)
+        meta   = metadata_map.get(doi, {})
+        depth  = depths.get(doi, 1)
         citation_count = meta.get("citation_count")
-        title = meta.get("title")
+        title   = meta.get("title")
         abstract = meta.get("abstract")
+        authors  = meta.get("authors")
+        year     = meta.get("year")
 
-        doi_retraction = check_retraction(doi)
+        doi_retraction   = check_retraction(doi)
         doi_is_retracted = doi_retraction.get("is_retracted", False)
 
-        risk_score = compute_risk_score(
+        risk_score, sentiment = compute_risk_score(
             depth=depth,
             citation_count=citation_count,
+            abstract=abstract,
+            title=title,
             is_retracted=doi_is_retracted,
         )
         high_risk_keyword = is_high_risk_by_keywords(title, abstract)
@@ -86,34 +92,46 @@ def run_analysis(doi_input: str, title_hint: str | None = None) -> dict[str, Any
         papers.append({
             "doi": doi,
             "title": title,
+            "abstract": abstract,
+            "authors": authors,
             "citation_count": citation_count,
-            "year": meta.get("year"),
+            "year": year,
             "depth_level": depth,
             "risk_score": risk_score,
             "risk_level": risk_level,
+            "sentiment": sentiment,
             "is_retracted": doi_is_retracted,
             "high_risk_keyword": high_risk_keyword,
         })
 
     ranked = rank_papers(papers)
 
+    # Add root paper as first entry
     root_meta = metadata_map.get(root_doi, {})
-    root_risk = compute_risk_score(
+    root_risk_score, root_sentiment = compute_risk_score(
         depth=0,
         citation_count=root_meta.get("citation_count"),
+        abstract=root_meta.get("abstract"),
+        title=root_meta.get("title"),
         is_retracted=retraction.get("is_retracted", False),
     )
-    ranked.insert(0, {
+    root_entry = {
         "doi": root_doi,
         "title": root_meta.get("title"),
+        "abstract": root_meta.get("abstract"),
+        "authors": root_meta.get("authors"),
         "citation_count": root_meta.get("citation_count"),
         "year": root_meta.get("year"),
         "depth_level": 0,
-        "risk_score": root_risk,
-        "risk_level": "HIGH" if retraction.get("is_retracted") else classify_risk_level(root_risk, False),
+        "risk_score": root_risk_score,
+        "risk_level": "RETRACTED" if retraction.get("is_retracted") else classify_risk_level(root_risk_score, is_high_risk_by_keywords(root_meta.get("title"), root_meta.get("abstract"))),
+        "sentiment": root_sentiment,
         "is_retracted": retraction.get("is_retracted", False),
         "high_risk_keyword": is_high_risk_by_keywords(root_meta.get("title"), root_meta.get("abstract")),
-    })
+    }
+    all_papers = [root_entry] + ranked
+
+    analytics = compute_analytics(all_papers)
 
     return {
         "success": True,
@@ -121,7 +139,8 @@ def run_analysis(doi_input: str, title_hint: str | None = None) -> dict[str, Any
         "root_doi": root_doi,
         "retraction": retraction,
         "graph": graph,
-        "papers": ranked,
+        "papers": all_papers,
+        "analytics": analytics,
         "node_count": graph.number_of_nodes(),
         "edge_count": graph.number_of_edges(),
     }

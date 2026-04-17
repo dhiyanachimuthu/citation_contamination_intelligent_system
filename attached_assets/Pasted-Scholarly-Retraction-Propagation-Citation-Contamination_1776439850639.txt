@@ -1,0 +1,279 @@
+Scholarly Retraction Propagation & Citation Contamination Intelligence System
+1. 🎯 ABSTRACT
+
+Scientific literature is treated as reliable even after some papers are retracted. Current academic databases mark retractions at the source level but fail to propagate this invalidation across citation networks. As a result, downstream papers continue to cite and rely on invalid findings.
+
+This project builds a graph-based forensic intelligence system that models scientific literature as a directed citation network and computes how retracted research propagates through academic influence chains.
+
+The system:
+
+Detects retracted papers
+Builds forward citation graphs
+Analyzes propagation across 1–3 citation hops
+Computes contamination risk scores
+Visualizes citation spread
+Identifies high-risk scientific reviews and meta-analyses
+2. ❗ PROBLEM STATEMENT
+2.1 Core Problem
+
+When a scientific paper is retracted:
+
+The retraction is applied only to the original paper
+Citation databases do NOT update downstream papers
+Papers that cite the retracted work remain unflagged
+2.2 Critical Failure in Current Systems
+
+Existing systems:
+
+PubMed → marks retraction only at source level
+Google Scholar → inconsistent retraction visibility
+Semantic Scholar → no propagation logic
+OpenCitations → provides citation links but no risk modeling
+2.3 Research Gap
+
+No system:
+
+treats citations as a contamination propagation graph
+computes downstream risk from retracted literature
+ranks papers based on inherited invalidity
+3. 🧠 OBJECTIVES
+Primary Objective
+
+Build a system that models scientific misinformation propagation in citation networks.
+
+Secondary Objectives
+Build a directed citation graph
+Identify downstream influenced papers
+Compute contamination risk scores
+Visualize propagation structure
+Flag high-impact contaminated literature
+4. 🏗 SYSTEM ARCHITECTURE
+4.1 High-Level Architecture
+Data Layer
+Graph Construction Engine
+Contamination Scoring Engine
+Citation Context Analyzer
+Storage Layer
+Visualization + UI Layer
+5. 📦 DATA LAYER
+5.1 Retraction Dataset
+
+Source:
+
+Retraction Watch dataset
+
+Fields:
+
+DOI (primary identifier)
+Title
+Authors
+Journal
+Retraction date
+Retraction reason
+Field/category
+5.2 Citation Data Sources
+Primary:
+OpenCitations
+Secondary:
+Semantic Scholar
+
+Data extracted:
+
+citing paper → cited paper relationships
+publication year
+citation count
+5.3 Metadata Enrichment
+
+Each paper stores:
+
+DOI
+title
+abstract
+authors
+year
+citation count
+6. 🕸 GRAPH MODEL
+
+Built using:
+
+NetworkX
+6.1 Graph Definition
+Nodes → papers (DOI-based)
+Edges → citation relationship
+
+Directed edge:
+
+A → B means A cites B
+6.2 Graph Expansion Strategy
+
+For each retracted paper:
+
+Level 0: Retraction source
+Level 1: Direct citations
+Level 2: Citations of Level 1
+Level 3: Deep propagation
+
+Limit:
+
+Maximum 150–300 nodes per graph
+6.3 BFS Traversal
+
+Used for:
+
+propagation discovery
+layered contamination scoring
+7. ⚠️ CONTAMINATION RISK MODEL
+7.1 Base Propagation Weights
+Level	Weight
+1	1.0
+2	0.5
+3	0.2
+7.2 Influence Factor
+
+Based on citation count:
+
+influence = log(1 + citation_count)
+7.3 Citation Context Analysis
+
+Using:
+
+SciBERT
+
+Classification:
+
+Endorsing
+Neutral
+Critiquing
+7.4 Sentiment Weighting
+Type	Weight
+Endorsing	1.5
+Neutral	1.0
+Critiquing	0.1
+7.5 Final Risk Formula
+risk_score =
+depth_weight × sentiment_weight × log(1 + citation_count)
+7.6 Field Velocity Adjustment
+
+Different fields propagate knowledge differently:
+
+Medicine → high velocity
+Biology → medium
+Mathematics → low
+8. 🚨 HIGH-RISK PAPER DETECTION
+
+Automatic tagging of:
+
+Systematic reviews
+Meta-analyses
+Review articles
+
+Method:
+
+Title keyword detection
+9. 🗄 DATABASE DESIGN
+
+Using:
+
+Supabase
+Tables:
+9.1 retractions
+doi
+title
+reason
+date
+field
+9.2 citations
+source_doi
+target_doi
+year
+9.3 papers
+doi
+title
+abstract
+citation_count
+9.4 risk_scores
+doi
+risk_score
+level
+sentiment
+timestamp
+10. 🔌 API INTEGRATION
+10.1 OpenCitations API
+Fetch forward citations
+Build graph edges
+10.2 Semantic Scholar API
+Retrieve abstracts
+Citation metadata
+11. 🖥 USER INTERFACE
+
+Built using:
+
+Streamlit
+11.1 Input Module
+DOI input field
+Analyze button
+11.2 Retraction Status Panel
+Retraction metadata
+reason + date
+11.3 Contamination Graph Viewer
+Interactive graph visualization
+Node coloring by risk
+11.4 Risk Ranking Table
+
+Columns:
+
+Paper title
+DOI
+Risk score
+Citation level
+Sentiment
+11.5 Filters
+Field
+Year range
+Risk threshold
+11.6 Export Feature
+CSV download of results
+12. 📊 ANALYTICS MODULE
+
+Includes:
+
+Total contaminated papers
+Level-wise spread
+Maximum propagation depth
+Top 10 highest risk papers
+13. ⚙ SYSTEM DESIGN CONSTRAINTS
+Must handle ~150–300 nodes per query
+Must cache API responses
+Must avoid repeated external API calls
+Must support incremental graph expansion
+Must run on low-resource machines
+14. 🧪 OPTIONAL ADVANCED MODULES
+Author-level contamination tracking
+Journal-level risk heatmaps
+Multi-retraction overlap detection
+Temporal propagation visualization
+15. 🎯 EXPECTED OUTPUT
+
+For any input DOI:
+
+System must output:
+
+Retraction metadata
+Citation graph (1–3 hops)
+Risk-ranked list of papers
+Visualization of contamination spread
+Explanation of top risky papers
+16. 🧠 SIGNIFICANCE
+
+This system demonstrates:
+
+Citation network analysis
+Scientific integrity tracking
+Graph propagation modeling
+Data-driven risk scoring
+Research infrastructure design
+17. 🚀 FINAL SYSTEM DEFINITION
+
+This project is a:
+
+Graph-based scientific misinformation propagation detection engine that quantifies downstream impact of retracted research in academic citation networks.

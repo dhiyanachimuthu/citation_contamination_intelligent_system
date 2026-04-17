@@ -177,6 +177,7 @@ def job_result(job_id: str):
     papers         = result.get("papers", [])
     retraction     = result.get("retraction", {})
     root_doi       = result.get("root_doi", "")
+    analytics      = result.get("analytics", {})
     high_risk_count  = sum(1 for p in papers if p.get("risk_level") == "HIGH")
     retracted_count  = sum(1 for p in papers if p.get("is_retracted"))
 
@@ -191,6 +192,7 @@ def job_result(job_id: str):
         graph_html=graph_html,
         node_count=result.get("node_count", 0),
         edge_count=result.get("edge_count", 0),
+        analytics=analytics,
         high_risk_count=high_risk_count,
         retracted_count=retracted_count,
     )
@@ -209,8 +211,8 @@ def export_csv(job_id: str):
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=[
-        "doi", "title", "citation_count", "year",
-        "depth_level", "risk_score", "risk_level",
+        "doi", "title", "authors", "year", "citation_count",
+        "depth_level", "risk_score", "risk_level", "sentiment",
         "is_retracted", "high_risk_keyword",
     ])
     writer.writeheader()
@@ -218,11 +220,13 @@ def export_csv(job_id: str):
         writer.writerow({
             "doi": p.get("doi", ""),
             "title": p.get("title") or "NULL",
-            "citation_count": p.get("citation_count") if p.get("citation_count") is not None else "NULL",
+            "authors": p.get("authors") or "NULL",
             "year": p.get("year") or "NULL",
+            "citation_count": p.get("citation_count") if p.get("citation_count") is not None else "NULL",
             "depth_level": p.get("depth_level", ""),
             "risk_score": p.get("risk_score", ""),
             "risk_level": p.get("risk_level", ""),
+            "sentiment": p.get("sentiment", "Neutral"),
             "is_retracted": p.get("is_retracted", False),
             "high_risk_keyword": p.get("high_risk_keyword", False),
         })

@@ -29,7 +29,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd citation-app && python flask_app.py"
+args = "kill -9 $(ss -tlnp 'sport = :5000' 2>/dev/null | awk 'NR>1{gsub(/.*pid=/,\"\",$NF); gsub(/,.*/,\"\",$NF); print $NF}') 2>/dev/null; sleep 1; cd citation-app && python flask_app.py"
 waitForPort = 5000
 
 [agent]
@@ -59,6 +59,50 @@ externalPort = 3000
 [[ports]]
 localPort = 8083
 externalPort = 3001
+
+[[ports]]
+localPort = 8084
+externalPort = 3003
+
+[[ports]]
+localPort = 8085
+externalPort = 4200
+
+[[ports]]
+localPort = 8086
+externalPort = 5173
+
+[[ports]]
+localPort = 8087
+externalPort = 6000
+
+[[ports]]
+localPort = 8088
+externalPort = 6800
+
+[[ports]]
+localPort = 8089
+externalPort = 8000
+
+[[ports]]
+localPort = 8090
+externalPort = 8008
+
+[[ports]]
+localPort = 8091
+externalPort = 3002
+
+[[ports]]
+localPort = 8092
+externalPort = 8081
+
+[[ports]]
+localPort = 8093
+externalPort = 8099
+
+[[ports]]
+localPort = 8094
+externalPort = 9000
 
 [nix]
 channel = "stable-25_05"
