@@ -2,66 +2,72 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
-Also contains a standalone Python/Streamlit application for citation contamination analysis.
+pnpm workspace monorepo (TypeScript/Node.js) + standalone Python/Flask application for citation contamination analysis.
 
-## Stack
+## Node.js Stack
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
-- **Python**: 3.11 (for Streamlit app)
+- **Monorepo**: pnpm workspaces
+- **Node**: 24, **TypeScript**: 5.9
+- **API framework**: Express 5, **Database**: PostgreSQL + Drizzle ORM
+- **Validation**: Zod, **API codegen**: Orval
 
-## Key Commands
+## Key Node.js Commands
 
-- `pnpm run typecheck` — full typecheck across all packages
+- `pnpm run typecheck` — full typecheck
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks
+- `pnpm --filter @workspace/db run push` — push DB schema (dev)
+- `pnpm --filter @workspace/api-server run dev` — run API server
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+---
 
 ## Citation Contamination Intelligence System
 
-Located in `citation-app/`. A Python/Streamlit application that detects how retracted scientific papers
-propagate influence through real citation networks.
+**Location:** `citation-app/`
+**Workflow:** "Citation Contamination System" → `cd citation-app && python flask_app.py` on port 5000
+**Entry points:**
+- Web UI: `python flask_app.py`
+- CLI: `python main.py <DOI>`
+- Data processing: `python process_data.py`
 
 ### Architecture
 
 | File | Purpose |
 |------|---------|
-| `citation-app/app.py` | Main Streamlit dashboard |
-| `citation-app/modules/doi_validator.py` | DOI validation & normalization |
-| `citation-app/modules/retraction_detector.py` | Retraction Watch dataset lookup |
-| `citation-app/modules/citation_fetcher.py` | OpenCitations API client |
-| `citation-app/modules/metadata_fetcher.py` | Semantic Scholar API client |
-| `citation-app/modules/graph_builder.py` | NetworkX directed citation graph |
-| `citation-app/modules/risk_engine.py` | Risk score computation & ranking |
-| `citation-app/modules/graph_viz.py` | PyVis interactive graph HTML |
-| `citation-app/modules/pipeline.py` | End-to-end pipeline orchestrator |
-| `citation-app/download_retraction_watch.py` | Helper to download RW dataset |
-| `citation-app/data/retraction_watch.csv` | Local Retraction Watch CSV (required) |
-
-### Data Sources (real data only — zero synthetic)
-- **OpenCitations COCI API** — citation relationships
-- **Semantic Scholar API** — paper metadata
-- **Retraction Watch** — retraction status (local CSV at `citation-app/data/retraction_watch.csv`)
+| `flask_app.py` | Flask web server — routes, job queue, templates |
+| `main.py` | CLI pipeline entry point |
+| `process_data.py` | CSV → processed_retractions.json (run once) |
+| `modules/doi_validator.py` | DOI validation & normalization |
+| `modules/retraction_detector.py` | O(1) lookup in processed_retractions.json |
+| `modules/citation_fetcher.py` | OpenCitations API + disk cache |
+| `modules/metadata_fetcher.py` | Semantic Scholar API + disk cache |
+| `modules/cache.py` | Thread-safe disk-backed JSON cache (DiskCache) |
+| `modules/graph_builder.py` | NetworkX directed graph, BFS, max 150 nodes/3 hops |
+| `modules/risk_engine.py` | Risk formula + keyword classification + ranking |
+| `modules/graph_viz.py` | PyVis interactive graph HTML |
+| `modules/pipeline.py` | End-to-end orchestrator |
+| `templates/` | Flask/Jinja2 HTML templates (base, index, waiting, results) |
+| `data/retraction_watch.csv` | Raw Retraction Watch dataset (69,709 rows) |
+| `data/processed_retractions.json` | Pre-processed index (60,936 DOIs, fast lookup) |
+| `data/cache_citations.json` | OpenCitations API cache (7-day TTL) |
+| `data/cache_metadata.json` | Semantic Scholar API cache (3-day TTL) |
 
 ### Risk Formula
 ```
 depth_weight = {1: 1.0, 2: 0.5, 3: 0.2}
-influence = log(1 + citation_count)
-risk_score = depth_weight × influence
-if retracted: risk_score × 2.0
+influence    = log(1 + citation_count)
+risk_score   = depth_weight × influence
+if retracted → risk_score × 2.0
 ```
+High-risk keywords: "systematic review", "meta-analysis", "review"
 
-### Running
-Workflow: "Citation Contamination System"
-Command: `cd citation-app && streamlit run app.py --server.port 5000`
+### Data Sources (zero synthetic data)
+- **OpenCitations COCI API** — citation edges
+- **Semantic Scholar API** — title, abstract, authors, citation count, year
+- **Retraction Watch** — retraction status (60,936 DOIs indexed)
+
+### Pipeline Flow
+```
+DOI input → validate → retraction check (O1) → BFS citation graph
+→ metadata enrichment → risk scoring → rank → render
+```

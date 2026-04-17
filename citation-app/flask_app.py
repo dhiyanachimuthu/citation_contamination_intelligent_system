@@ -1,6 +1,6 @@
 """
 Citation Contamination Intelligence System
-Flask Web Application — pure HTTP, no WebSockets required.
+Flask Web Application — pure HTTP, no WebSockets.
 """
 
 import os
@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from modules.doi_validator import validate_doi
 from modules.pipeline import run_analysis
 from modules.graph_viz import build_pyvis_html
+from modules.cache import get_citations_cache, get_metadata_cache
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,43 +59,77 @@ def _run_job(job_id: str, doi_input: str, title_hint: str | None):
 
 
 def _rw_status() -> dict:
-    rw_path = os.path.join(os.path.dirname(__file__), "data", "retraction_watch.csv")
-    if os.path.exists(rw_path):
-        size_kb = os.path.getsize(rw_path) // 1024
-        return {"loaded": True, "size_kb": size_kb}
+    import json
+    processed = os.path.join(os.path.dirname(__file__), "data", "processed_retractions.json")
+    raw_csv   = os.path.join(os.path.dirname(__file__), "data", "retraction_watch.csv")
+    if os.path.exists(processed):
+        try:
+            with open(processed) as f:
+                data = json.load(f)
+            stats = data.get("stats", {})
+            return {
+                "loaded": True,
+                "source": "processed_retractions.json",
+                "doi_count": stats.get("with_doi", 0),
+                "total_rows": stats.get("total_rows", 0),
+            }
+        except Exception:
+            pass
+    if os.path.exists(raw_csv):
+        size_kb = os.path.getsize(raw_csv) // 1024
+        return {"loaded": True, "source": "retraction_watch.csv (raw)", "doi_count": 0, "total_rows": size_kb}
     return {"loaded": False}
 
 
+def _cache_stats() -> dict:
+    try:
+        cc = get_citations_cache()
+        mc = get_metadata_cache()
+        return {"citations": cc.size(), "metadata": mc.size()}
+    except Exception:
+        return {"citations": 0, "metadata": 0}
+
+
+# ── Health checks (for Replit proxy compatibility) ────────────────────────────
+@app.route("/_stcore/health")
+@app.route("/healthz")
+def health():
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/_stcore/host-config")
+def host_config():
+    return jsonify({"allowedOrigins": ["*"], "useExternalAuthToken": False}), 200
+
+
+# ── Main routes ───────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("index.html", rw_status=_rw_status())
+    return render_template("index.html", rw_status=_rw_status(), cache_stats=_cache_stats())
 
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    doi_input = (request.form.get("doi") or "").strip()
+    doi_input  = (request.form.get("doi") or "").strip()
     title_hint = (request.form.get("title_hint") or "").strip()
 
     if not doi_input:
-        return render_template("index.html", rw_status=_rw_status(), error="Please enter a DOI.")
+        return render_template("index.html", rw_status=_rw_status(),
+                               cache_stats=_cache_stats(), error="Please enter a DOI.")
 
     is_valid, normalized = validate_doi(doi_input)
     if not is_valid:
         return render_template(
             "index.html",
             rw_status=_rw_status(),
-            error=f"Invalid DOI format: '{doi_input}'. DOIs must match: 10.XXXX/suffix",
+            cache_stats=_cache_stats(),
+            error=f"Invalid DOI format: '{doi_input}'. Must match: 10.XXXX/suffix",
             doi_input=doi_input,
         )
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
-        _jobs[job_id] = {
-            "status": "queued",
-            "result": None,
-            "graph_html": None,
-            "error": None,
-        }
+        _jobs[job_id] = {"status": "queued", "result": None, "graph_html": None, "error": None}
 
     thread = threading.Thread(
         target=_run_job,
@@ -121,33 +156,34 @@ def job_result(job_id: str):
         job = _jobs.get(job_id)
 
     if not job:
-        return render_template("index.html", rw_status=_rw_status(), error="Job not found."), 404
+        return render_template("index.html", rw_status=_rw_status(),
+                               cache_stats=_cache_stats(), error="Job not found."), 404
 
     status = job["status"]
 
     if status == "error":
-        return render_template(
-            "index.html",
-            rw_status=_rw_status(),
-            error=f"Analysis failed: {job.get('error', 'Unknown error')}",
-        )
+        return render_template("index.html", rw_status=_rw_status(),
+                               cache_stats=_cache_stats(),
+                               error=f"Analysis failed: {job.get('error', 'Unknown error')}")
 
     if status in ("queued", "running"):
-        result_val = job.get("result")
-        doi_val = result_val.get("root_doi", "") if result_val else ""
+        doi_val = ""
+        if job.get("result"):
+            doi_val = job["result"].get("root_doi", "")
         return render_template("waiting.html", job_id=job_id, doi=doi_val)
 
-    result = job["result"]
-    graph_html = job["graph_html"]
-    papers = result.get("papers", [])
-    retraction = result.get("retraction", {})
-    root_doi = result.get("root_doi", "")
-    high_risk_count = sum(1 for p in papers if p.get("risk_level") == "HIGH")
-    retracted_count = sum(1 for p in papers if p.get("is_retracted"))
+    result         = job["result"]
+    graph_html     = job["graph_html"]
+    papers         = result.get("papers", [])
+    retraction     = result.get("retraction", {})
+    root_doi       = result.get("root_doi", "")
+    high_risk_count  = sum(1 for p in papers if p.get("risk_level") == "HIGH")
+    retracted_count  = sum(1 for p in papers if p.get("is_retracted"))
 
     return render_template(
         "results.html",
         rw_status=_rw_status(),
+        cache_stats=_cache_stats(),
         job_id=job_id,
         root_doi=root_doi,
         retraction=retraction,
@@ -168,7 +204,7 @@ def export_csv(job_id: str):
     if not job or job["status"] != "done":
         return "Not ready", 404
 
-    papers = job["result"].get("papers", [])
+    papers   = job["result"].get("papers", [])
     root_doi = job["result"].get("root_doi", "unknown")
 
     output = io.StringIO()
@@ -201,5 +237,5 @@ def export_csv(job_id: str):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting Flask app on 0.0.0.0:{port}")
+    logger.info(f"Starting Flask on 0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

@@ -1,12 +1,12 @@
 """
-Retraction detection module using the Retraction Watch dataset (CSV).
-Downloads from the known public CSV endpoint if not cached locally.
+Retraction detection module.
+Primary source: processed_retractions.json (pre-processed from Retraction Watch CSV).
+Falls back to raw CSV scan if JSON not yet generated.
 """
 
 import os
+import json
 import csv
-import io
-import requests
 import logging
 
 try:
@@ -17,49 +17,46 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-RETRACTION_WATCH_CSV_URL = (
-    "https://api.retractionwatch.com/api/retractions?format=csv"
-)
+DATA_DIR        = os.path.join(os.path.dirname(__file__), "..", "data")
+PROCESSED_PATH  = os.path.join(DATA_DIR, "processed_retractions.json")
+RAW_CSV_PATH    = os.path.join(DATA_DIR, "retraction_watch.csv")
 
-LOCAL_CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "retraction_watch.csv")
-
-_CACHE: list[dict] | None = None
+_PROCESSED: dict | None = None
 
 
-def _load_dataset() -> list[dict]:
-    global _CACHE
-    if _CACHE is not None:
-        return _CACHE
+def _load_processed() -> dict:
+    global _PROCESSED
+    if _PROCESSED is not None:
+        return _PROCESSED
 
-    if os.path.exists(LOCAL_CSV_PATH):
+    if os.path.exists(PROCESSED_PATH):
         try:
-            with open(LOCAL_CSV_PATH, encoding="utf-8", errors="replace") as f:
-                reader = csv.DictReader(f)
-                _CACHE = list(reader)
-            logger.info(f"Loaded {len(_CACHE)} retraction records from local CSV.")
-            return _CACHE
+            with open(PROCESSED_PATH, encoding="utf-8") as f:
+                _PROCESSED = json.load(f)
+            stats = _PROCESSED.get("stats", {})
+            logger.info(
+                f"Loaded processed_retractions.json: "
+                f"{stats.get('with_doi', 0)} DOIs, "
+                f"{stats.get('without_doi', 0)} title-only entries."
+            )
+            return _PROCESSED
         except Exception as e:
-            logger.warning(f"Failed to read local CSV: {e}")
+            logger.warning(f"Failed to load processed JSON: {e}")
 
-    _CACHE = []
-    return _CACHE
+    # Fallback: trigger processing on first use
+    if os.path.exists(RAW_CSV_PATH):
+        logger.info("processed_retractions.json not found — running data processing now.")
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+            from process_data import process
+            _PROCESSED = process()
+            return _PROCESSED
+        except Exception as e:
+            logger.error(f"Data processing failed: {e}")
 
-
-def _match_doi(record: dict, doi: str) -> bool:
-    record_doi = (record.get("OriginalPaperDOI") or "").strip().lower()
-    if not record_doi:
-        return False
-    return record_doi == doi.lower()
-
-
-def _match_title(record: dict, title: str) -> bool:
-    if not FUZZ_AVAILABLE or not title:
-        return False
-    record_title = (record.get("Title") or "").strip()
-    if not record_title:
-        return False
-    score = fuzz.token_set_ratio(title.lower(), record_title.lower())
-    return score >= 85
+    _PROCESSED = {"by_doi": {}, "no_doi": []}
+    return _PROCESSED
 
 
 def check_retraction(doi: str, title: str | None = None) -> dict:
@@ -67,60 +64,38 @@ def check_retraction(doi: str, title: str | None = None) -> dict:
     Check if a paper is retracted.
 
     Matching priority:
-    1. Exact DOI match
-    2. Partial DOI match
-    3. Fuzzy title match (only if DOI missing from record)
+    1. Exact DOI match in processed index
+    2. Fuzzy title match (title-only records, only if title provided)
 
     Returns:
-        {
-            "is_retracted": bool,
-            "reason": str | None,
-            "year": int | None
-        }
+        {"is_retracted": bool, "reason": str|None, "year": int|None}
     """
-    dataset = _load_dataset()
+    data = _load_processed()
+    doi_norm = doi.strip().lower()
 
-    if not dataset:
-        return {"is_retracted": False, "reason": None, "year": None}
+    # 1. Exact DOI lookup — O(1)
+    by_doi = data.get("by_doi", {})
+    if doi_norm in by_doi:
+        entry = by_doi[doi_norm]
+        return {
+            "is_retracted": True,
+            "reason": entry.get("reason"),
+            "year": entry.get("year"),
+        }
 
-    doi_norm = doi.lower().strip()
-
-    for record in dataset:
-        if _match_doi(record, doi_norm):
-            return _build_result(record)
-
-    for record in dataset:
-        record_doi = (record.get("OriginalPaperDOI") or "").strip().lower()
-        if record_doi and doi_norm in record_doi:
-            return _build_result(record)
-
-    if title:
-        for record in dataset:
-            record_doi = (record.get("OriginalPaperDOI") or "").strip()
-            if not record_doi and _match_title(record, title):
-                return _build_result(record)
+    # 2. Fuzzy title match (only for records with no DOI)
+    if title and FUZZ_AVAILABLE:
+        title_lower = title.lower()
+        for entry in data.get("no_doi", []):
+            record_title = (entry.get("title") or "").lower()
+            if not record_title:
+                continue
+            score = fuzz.token_set_ratio(title_lower, record_title)
+            if score >= 88:
+                return {
+                    "is_retracted": True,
+                    "reason": entry.get("reason"),
+                    "year": entry.get("year"),
+                }
 
     return {"is_retracted": False, "reason": None, "year": None}
-
-
-def _build_result(record: dict) -> dict:
-    reason_raw = record.get("Reason") or record.get("RetractionReason") or None
-    year_raw = record.get("RetractionDate") or record.get("Year") or None
-
-    year = None
-    if year_raw:
-        parts = str(year_raw).split("/")
-        for part in reversed(parts):
-            try:
-                y = int(part.strip())
-                if 1900 < y < 2100:
-                    year = y
-                    break
-            except ValueError:
-                continue
-
-    return {
-        "is_retracted": True,
-        "reason": str(reason_raw).strip() if reason_raw else None,
-        "year": year,
-    }

@@ -12,66 +12,92 @@
       <div>
         <label class="input-label" for="doi">DOI <span style="color:#e53e3e">*</span></label>
         <input class="input" type="text" id="doi" name="doi"
-               placeholder="e.g. 10.1038/nbt.3816"
+               placeholder="e.g. 10.1038/nbt.3816  or  10.1126/science.1150952"
                value="{{ doi_input or '' }}"
                required autocomplete="off" />
       </div>
       <div>
-        <label class="input-label" for="title_hint">Paper Title <span style="color:var(--muted)">(optional fallback)</span></label>
+        <label class="input-label" for="title_hint">Paper Title <span style="color:var(--muted)">(optional)</span></label>
         <input class="input" type="text" id="title_hint" name="title_hint"
-               placeholder="Used only if DOI missing from Retraction Watch" />
+               placeholder="Fallback for retraction matching if DOI unindexed" />
       </div>
     </div>
-    <button type="submit" class="btn btn-primary">Run Analysis</button>
+    <button type="submit" class="btn btn-primary">▶ Run Analysis</button>
   </form>
 </div>
 
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
   <div class="card">
     <div class="card-title">How it works</div>
-    <ol style="padding-left:1.2rem; color:var(--muted); font-size:0.88rem; line-height:2;">
-      <li>Enter a paper DOI</li>
-      <li>Retraction Watch dataset is checked for retraction status</li>
-      <li>OpenCitations API fetches real citing papers (up to 3 hops, max 150 nodes)</li>
-      <li>Semantic Scholar enriches each node with title, abstract, citation count</li>
-      <li>Risk scores are computed and papers ranked by contamination influence</li>
+    <ol style="padding-left:1.2rem; color:var(--muted); font-size:0.88rem; line-height:2.1;">
+      <li>DOI is validated and normalized</li>
+      <li>Retraction Watch index is checked (O(1) lookup)</li>
+      <li>OpenCitations fetches real citing papers — up to 3 hops, max 150 nodes</li>
+      <li>Semantic Scholar enriches each node with title, authors, citation count</li>
+      <li>Risk scores are computed &amp; papers ranked by contamination influence</li>
+      <li>Interactive graph &amp; ranked table are rendered</li>
     </ol>
   </div>
   <div class="card">
-    <div class="card-title">Color legend</div>
-    <div class="legend" style="flex-direction:column; gap:0.6rem;">
-      <div class="legend-item"><div class="legend-dot" style="background:#e53e3e"></div> Retracted paper</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#ed8936"></div> High risk (score &ge; 3.0 or contains review/meta-analysis)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#ecc94b"></div> Medium risk (score &ge; 1.5)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#48bb78"></div> Low risk</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#4f8ef7"></div> Root paper (your input DOI)</div>
+    <div class="card-title">Node color legend</div>
+    <div class="legend" style="flex-direction:column; gap:0.7rem; margin:0;">
+      <div class="legend-item"><div class="legend-dot" style="background:#4f8ef7; border:2px solid #4f8ef7;"></div> Root paper (your input DOI)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#e53e3e;"></div> Retracted paper</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ed8936;"></div> High risk — score ≥ 3.0 or contains review / meta-analysis</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ecc94b;"></div> Medium risk — score ≥ 1.5</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#48bb78;"></div> Low risk</div>
     </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-title">Retraction Watch Dataset</div>
-  {% if rw_status.loaded %}
-  <div class="alert alert-success" style="margin:0;">
-    Dataset loaded &mdash; {{ "{:,}".format(rw_status.size_kb) }} KB cached locally. Retraction detection is active.
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem;">
+  <!-- Retraction Watch status -->
+  <div class="card">
+    <div class="card-title">Retraction Watch Dataset</div>
+    {% if rw_status.loaded %}
+    <div class="alert alert-success" style="margin:0 0 0.8rem;">
+      ✓ Active — {{ "{:,}".format(rw_status.doi_count) }} DOIs indexed from {{ "{:,}".format(rw_status.total_rows) }} records
+      <span style="font-size:0.78rem; color:var(--muted); display:block; margin-top:0.2rem;">Source: {{ rw_status.source }}</span>
+    </div>
+    {% else %}
+    <div class="alert alert-warning" style="margin:0;">
+      <strong>Dataset not found.</strong> Download from
+      <a href="https://retractionwatch.com/retraction-watch-database-user-guide/" target="_blank">retractionwatch.com</a>
+      → place at <code style="font-family:monospace;font-size:0.82rem;">citation-app/data/retraction_watch.csv</code>
+      → run <code style="font-family:monospace;font-size:0.82rem;">python process_data.py</code>
+    </div>
+    {% endif %}
   </div>
-  {% else %}
-  <div class="alert alert-warning" style="margin:0;">
-    <strong>Dataset not found.</strong> Download the Retraction Watch CSV from
-    <a href="https://retractionwatch.com/retraction-watch-database-user-guide/" target="_blank">retractionwatch.com</a>
-    and place it at <code style="font-family:monospace;">citation-app/data/retraction_watch.csv</code>.
-    Citation graph and risk scoring will still work without it.
+
+  <!-- Cache stats -->
+  <div class="card">
+    <div class="card-title">API Cache (disk-backed)</div>
+    <div style="display:flex; gap:2rem; align-items:center;">
+      <div>
+        <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted);">Citation Cache</div>
+        <div style="font-size:1.6rem; font-weight:700; color:var(--primary);">{{ cache_stats.citations }}</div>
+        <div style="font-size:0.75rem; color:var(--muted);">DOIs cached</div>
+      </div>
+      <div>
+        <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted);">Metadata Cache</div>
+        <div style="font-size:1.6rem; font-weight:700; color:var(--primary);">{{ cache_stats.metadata }}</div>
+        <div style="font-size:0.75rem; color:var(--muted);">DOIs cached</div>
+      </div>
+      <div style="flex:1; font-size:0.82rem; color:var(--muted); line-height:1.7;">
+        Cached results are reused across analyses — no redundant API calls.
+        Citations expire after 7 days; metadata after 3 days.
+      </div>
+    </div>
   </div>
-  {% endif %}
 </div>
 
 <div class="card">
   <div class="card-title">Zero Hallucination Policy</div>
   <p style="font-size:0.87rem; color:var(--muted);">
-    Every node and edge in this system originates from a real API response.
-    No synthetic papers, fake DOIs, or placeholder nodes are ever generated.
-    Missing metadata fields are shown as <em>NULL</em> &mdash; never approximated or guessed.
-    API failures return empty results with exponential-backoff retry, not fallback data.
+    Every node and edge originates from a real API response.
+    No synthetic papers, fake DOIs, or placeholder nodes are generated.
+    Missing metadata fields are shown as <em>NULL</em> — never approximated or guessed.
+    API failures use exponential-backoff retry; if all retries fail, the result is an empty list — not fabricated data.
   </p>
 </div>
 
