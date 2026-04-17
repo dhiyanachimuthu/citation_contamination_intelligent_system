@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card" style="text-align:center; margin-top:4rem; max-width:500px; margin-left:auto; margin-right:auto;">
+  <div class="spinner"></div>
+  <h2 style="font-size:1.15rem; margin-bottom:0.5rem;">Analyzing citation network&hellip;</h2>
+  <p style="color:var(--muted); font-size:0.88rem; margin-bottom:1.5rem;">
+    Fetching real citation data from OpenCitations and Semantic Scholar.<br/>
+    This may take 30&ndash;120 seconds depending on citation volume.
+  </p>
+  {% if doi %}
+  <div style="font-family:monospace; font-size:0.82rem; background:var(--surface2); padding:0.5rem 1rem; border-radius:6px; color:var(--primary); margin-bottom:1.5rem;">{{ doi }}</div>
+  {% endif %}
+  <div id="status-msg" style="font-size:0.82rem; color:var(--muted);">Queued&hellip;</div>
+</div>
+
+<script>
+  const jobId = "{{ job_id }}";
+  let dots = 0;
+  const messages = [
+    "Validating DOI format&hellip;",
+    "Checking Retraction Watch dataset&hellip;",
+    "Fetching citing papers from OpenCitations&hellip;",
+    "Expanding citation graph (hop 2)&hellip;",
+    "Expanding citation graph (hop 3)&hellip;",
+    "Enriching metadata from Semantic Scholar&hellip;",
+    "Computing contamination risk scores&hellip;",
+    "Ranking papers by influence&hellip;",
+    "Building graph visualization&hellip;",
+    "Almost done&hellip;"
+  ];
+  let msgIdx = 0;
+  const statusEl = document.getElementById("status-msg");
+
+  const msgTimer = setInterval(() => {
+    if (msgIdx < messages.length - 1) {
+      msgIdx++;
+      statusEl.innerHTML = messages[msgIdx];
+    }
+  }, 8000);
+
+  async function poll() {
+    try {
+      const res = await fetch("/job/" + jobId + "/status");
+      const data = await res.json();
+      if (data.status === "done" || data.status === "error") {
+        clearInterval(msgTimer);
+        statusEl.innerHTML = "Done! Loading results&hellip;";
+        window.location.href = "/job/" + jobId + "/result";
+      } else if (data.status === "running") {
+        statusEl.innerHTML = messages[msgIdx];
+        setTimeout(poll, 2000);
+      } else {
+        setTimeout(poll, 2000);
+      }
+    } catch (e) {
+      setTimeout(poll, 3000);
+    }
+  }
+
+  setTimeout(poll, 1500);
+</script>
+{% endblock %}

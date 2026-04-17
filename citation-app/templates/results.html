@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; flex-wrap:wrap; gap:0.8rem;">
+  <div>
+    <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); margin-bottom:0.2rem;">Root DOI</div>
+    <div style="font-family:monospace; font-size:0.95rem; color:var(--primary);">{{ root_doi }}</div>
+  </div>
+  <a href="/" class="btn btn-primary">← New Analysis</a>
+</div>
+
+<!-- Retraction Status -->
+<div class="retraction-panel {{ 'retracted' if retraction.is_retracted else 'clean' }}">
+  <div class="retraction-status">
+    {% if retraction.is_retracted %}
+    ⚠ This paper has been RETRACTED
+    {% else %}
+    ✓ Not found in Retraction Watch dataset
+    {% endif %}
+  </div>
+  {% if retraction.is_retracted %}
+  <div class="retraction-meta">
+    <div class="retraction-meta-item">
+      <label>Retraction Year</label>
+      <span>{{ retraction.year or "N/A" }}</span>
+    </div>
+    <div class="retraction-meta-item">
+      <label>Reason</label>
+      <span>{{ retraction.reason or "N/A" }}</span>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Stats -->
+<div class="grid-4" style="margin-bottom:1.5rem;">
+  <div class="stat">
+    <div class="stat-label">Graph Nodes</div>
+    <div class="stat-value" style="color:var(--primary);">{{ node_count }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Citation Edges</div>
+    <div class="stat-value" style="color:var(--muted);">{{ edge_count }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">High Risk Papers</div>
+    <div class="stat-value" style="color:var(--orange);">{{ high_risk_count }}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Retracted in Network</div>
+    <div class="stat-value" style="color:var(--red);">{{ retracted_count }}</div>
+  </div>
+</div>
+
+<!-- Graph -->
+{% if graph_html %}
+<div class="card" style="padding:1rem;">
+  <div class="section-title">Citation Network Graph</div>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#e53e3e"></div> Retracted</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ed8936"></div> High Risk</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ecc94b"></div> Medium Risk</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#48bb78"></div> Low Risk</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4f8ef7"></div> Root Paper</div>
+  </div>
+  <iframe class="graph-frame" srcdoc="{{ graph_html | e }}"></iframe>
+</div>
+{% else %}
+<div class="card">
+  <div class="alert alert-info" style="margin:0;">No real citation data available from APIs for this DOI. The graph cannot be shown.</div>
+</div>
+{% endif %}
+
+<!-- Results Table -->
+<div class="card">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+    <div class="section-title" style="margin:0; border:none; padding:0;">Contamination Risk Rankings</div>
+    {% if papers %}
+    <a href="/job/{{ job_id }}/export" style="font-size:0.82rem; color:var(--muted);">Download CSV ↓</a>
+    {% endif %}
+  </div>
+
+  {% if not papers %}
+  <div class="alert alert-info" style="margin:0;">No real citation data available from APIs.</div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>DOI</th>
+          <th>Title</th>
+          <th>Citations</th>
+          <th>Year</th>
+          <th>Depth</th>
+          <th>Risk Score</th>
+          <th>Level</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in papers %}
+        <tr>
+          <td style="color:var(--muted); font-size:0.8rem;">{{ loop.index }}</td>
+          <td class="doi-cell">
+            <a href="https://doi.org/{{ p.doi }}" target="_blank" rel="noopener">{{ p.doi }}</a>
+          </td>
+          <td class="title-cell">
+            {% if p.title %}
+            <span style="font-size:0.83rem;">{{ p.title[:100] }}{% if p.title|length > 100 %}&hellip;{% endif %}</span>
+            {% else %}
+            <span class="null-val">NULL</span>
+            {% endif %}
+          </td>
+          <td>{% if p.citation_count is not none %}{{ p.citation_count }}{% else %}<span class="null-val">NULL</span>{% endif %}</td>
+          <td>{% if p.year %}{{ p.year }}{% else %}<span class="null-val">NULL</span>{% endif %}</td>
+          <td style="text-align:center;">{{ p.depth_level }}</td>
+          <td style="font-weight:600; font-family:monospace;">{{ "%.3f"|format(p.risk_score) }}</td>
+          <td>
+            {% if p.risk_level == "HIGH" %}
+            <span class="badge badge-orange">HIGH</span>
+            {% elif p.risk_level == "MEDIUM" %}
+            <span class="badge badge-yellow">MEDIUM</span>
+            {% else %}
+            <span class="badge badge-green">LOW</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if p.is_retracted %}
+            <span class="badge badge-red">RETRACTED</span>
+            {% elif p.high_risk_keyword %}
+            <span class="badge badge-orange">REVIEW</span>
+            {% else %}
+            &mdash;
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Methodology -->
+<div class="card">
+  <details>
+    <summary>Analysis Methodology</summary>
+    <div class="method-body">
+      <p><strong>Risk Score Formula:</strong></p>
+      <pre style="background:var(--surface2);padding:0.8rem 1rem;border-radius:6px;font-size:0.82rem;color:var(--primary);margin:0.5rem 0 1rem;">depth_weight = {1: 1.0, 2: 0.5, 3: 0.2}
+influence   = log(1 + citation_count)
+risk_score  = depth_weight × influence
+if retracted → risk_score × 2.0</pre>
+      <p><strong>High Risk Keywords:</strong> <code>systematic review</code>, <code>meta-analysis</code>, <code>review</code></p>
+      <p><strong>Graph Limits:</strong> Max 150 nodes, 3-hop expansion from root DOI</p>
+      <p><strong>Data sources:</strong> Citation edges from OpenCitations COCI API &mdash; Metadata from Semantic Scholar API &mdash; Retraction status from Retraction Watch dataset (local CSV)</p>
+      <p><strong>Zero hallucination:</strong> Every node is a real DOI from an API response. Missing fields are NULL, never approximated.</p>
+    </div>
+  </details>
+</div>
+
+{% endblock %}
