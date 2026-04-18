@@ -1,62 +1,80 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card" style="text-align:center; margin-top:4rem; max-width:500px; margin-left:auto; margin-right:auto;">
-  <div class="spinner"></div>
-  <h2 style="font-size:1.15rem; margin-bottom:0.5rem;">Analyzing citation network&hellip;</h2>
-  <p style="color:var(--muted); font-size:0.88rem; margin-bottom:1.5rem;">
-    Fetching real citation data from OpenCitations and Semantic Scholar.<br/>
-    This may take 30&ndash;120 seconds depending on citation volume.
-  </p>
-  {% if doi %}
-  <div style="font-family:monospace; font-size:0.82rem; background:var(--surface2); padding:0.5rem 1rem; border-radius:6px; color:var(--primary); margin-bottom:1.5rem;">{{ doi }}</div>
-  {% endif %}
-  <div id="status-msg" style="font-size:0.82rem; color:var(--muted);">Queued&hellip;</div>
+<div style="max-width:540px; margin:3rem auto 0; text-align:center;">
+  <div class="card">
+    <!-- Animated ring spinner -->
+    <div style="display:flex; justify-content:center; margin-bottom:1.5rem;">
+      <div style="width:56px; height:56px; border:4px solid var(--border); border-top-color:var(--primary); border-radius:50%; animation:spin 0.9s linear infinite;"></div>
+    </div>
+
+    <h2 style="font-size:1.15rem; margin:0 0 0.5rem; font-weight:700;">Analyzing Citation Network</h2>
+    <div style="font-family:var(--mono); font-size:0.82rem; background:var(--surface2); padding:0.5rem 1rem; border-radius:6px; color:var(--primary); margin:0.8rem 0 1.2rem; word-break:break-all;">{{ doi }}</div>
+
+    <div id="step-msg" style="font-size:0.85rem; color:var(--muted); min-height:1.4em; line-height:1.6; margin-bottom:1.2rem;">Queued…</div>
+
+    <!-- Progress dots -->
+    <div id="progress-track" style="display:flex; gap:0.4rem; justify-content:center; margin-bottom:1.5rem;">
+      {% for i in range(7) %}
+      <div class="prog-dot" id="dot-{{ i }}" style="width:8px; height:8px; border-radius:50%; background:var(--border); transition:background 0.3s;"></div>
+      {% endfor %}
+    </div>
+
+    <div style="font-size:0.78rem; color:var(--muted); line-height:1.7;">
+      Fetching real citation data from OpenCitations &amp; Semantic Scholar.<br>
+      This typically takes <strong>30–120 seconds</strong> depending on citation volume.
+    </div>
+  </div>
 </div>
 
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
 <script>
-  const jobId = "{{ job_id }}";
-  let dots = 0;
-  const messages = [
-    "Validating DOI format&hellip;",
-    "Checking Retraction Watch dataset&hellip;",
-    "Fetching citing papers from OpenCitations&hellip;",
-    "Expanding citation graph (hop 2)&hellip;",
-    "Expanding citation graph (hop 3)&hellip;",
-    "Enriching metadata from Semantic Scholar&hellip;",
-    "Computing contamination risk scores&hellip;",
-    "Ranking papers by influence&hellip;",
-    "Building graph visualization&hellip;",
-    "Almost done&hellip;"
-  ];
-  let msgIdx = 0;
-  const statusEl = document.getElementById("status-msg");
+const jobId   = "{{ job_id }}";
+const stepEl  = document.getElementById("step-msg");
+const dots    = Array.from({length: 7}, (_, i) => document.getElementById("dot-" + i));
+let dotIdx    = 0;
 
-  const msgTimer = setInterval(() => {
-    if (msgIdx < messages.length - 1) {
-      msgIdx++;
-      statusEl.innerHTML = messages[msgIdx];
-    }
-  }, 8000);
+function lightDot(i) {
+  dots.forEach((d, j) => {
+    d.style.background = j <= i ? "var(--primary)" : "var(--border)";
+  });
+}
 
-  async function poll() {
-    try {
-      const res = await fetch("/job/" + jobId + "/status");
-      const data = await res.json();
-      if (data.status === "done" || data.status === "error") {
-        clearInterval(msgTimer);
-        statusEl.innerHTML = "Done! Loading results&hellip;";
-        window.location.href = "/job/" + jobId + "/result";
-      } else if (data.status === "running") {
-        statusEl.innerHTML = messages[msgIdx];
-        setTimeout(poll, 2000);
-      } else {
-        setTimeout(poll, 2000);
-      }
-    } catch (e) {
-      setTimeout(poll, 3000);
-    }
+// Advance dot every 12 seconds max
+const dotTimer = setInterval(() => {
+  if (dotIdx < dots.length - 1) {
+    dotIdx++;
+    lightDot(dotIdx);
   }
+}, 12000);
 
-  setTimeout(poll, 1500);
+async function poll() {
+  try {
+    const res  = await fetch("/job/" + jobId + "/status");
+    const data = await res.json();
+
+    if (data.step) stepEl.textContent = data.step;
+
+    if (data.status === "done") {
+      clearInterval(dotTimer);
+      lightDot(dots.length - 1);
+      stepEl.textContent = "Done! Loading results…";
+      setTimeout(() => { window.location.href = "/job/" + jobId + "/result"; }, 400);
+    } else if (data.status === "error") {
+      clearInterval(dotTimer);
+      stepEl.textContent = "Analysis failed. Redirecting…";
+      setTimeout(() => { window.location.href = "/job/" + jobId + "/result"; }, 1000);
+    } else {
+      setTimeout(poll, 2000);
+    }
+  } catch (e) {
+    setTimeout(poll, 3000);
+  }
+}
+
+lightDot(0);
+setTimeout(poll, 1500);
 </script>
 {% endblock %}

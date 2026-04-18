@@ -130,10 +130,13 @@
     <div class="legend-item"><div class="legend-dot" style="background:#ecc94b;"></div> Medium risk</div>
     <div class="legend-item"><div class="legend-dot" style="background:#48bb78;"></div> Low risk</div>
   </div>
-  {% if graph_html %}
-  <iframe class="graph-frame" srcdoc="{{ graph_html | e }}"></iframe>
+  {% if has_graph %}
+  <iframe class="graph-frame" src="/job/{{ job_id }}/graph" allowfullscreen></iframe>
   {% else %}
-  <div class="alert alert-info" style="margin:0;">No real citation data available from OpenCitations for this DOI. The graph cannot be shown.</div>
+  <div class="alert alert-info" style="margin:0;">
+    No citation data was returned by OpenCitations or Semantic Scholar for this DOI.
+    This can happen if the paper is not yet indexed. Try a different DOI.
+  </div>
   {% endif %}
 </div>
 

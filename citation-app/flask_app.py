@@ -34,10 +34,13 @@ def _run_job(job_id: str, doi_input: str, title_hint: str | None):
     try:
         with _jobs_lock:
             _jobs[job_id]["status"] = "running"
+            _jobs[job_id]["step"] = "Validating DOI and checking retraction status…"
 
-        result = run_analysis(doi_input, title_hint=title_hint or None)
+        result = run_analysis(doi_input, title_hint=title_hint or None,
+                              progress_cb=lambda msg: _set_step(job_id, msg))
 
         if result["success"]:
+            _set_step(job_id, "Building graph visualization…")
             graph_html = build_pyvis_html(
                 result["graph"],
                 result["root_doi"],
@@ -56,6 +59,12 @@ def _run_job(job_id: str, doi_input: str, title_hint: str | None):
         with _jobs_lock:
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = str(e)
+
+
+def _set_step(job_id: str, msg: str):
+    with _jobs_lock:
+        if job_id in _jobs:
+            _jobs[job_id]["step"] = msg
 
 
 def _rw_status() -> dict:
@@ -90,7 +99,7 @@ def _cache_stats() -> dict:
         return {"citations": 0, "metadata": 0}
 
 
-# ── Health checks (for Replit proxy compatibility) ────────────────────────────
+# ── Health / proxy ────────────────────────────────────────────────────────────
 @app.route("/_stcore/health")
 @app.route("/healthz")
 def health():
@@ -123,13 +132,19 @@ def analyze():
             "index.html",
             rw_status=_rw_status(),
             cache_stats=_cache_stats(),
-            error=f"Invalid DOI format: '{doi_input}'. Must match: 10.XXXX/suffix",
+            error=f"Invalid DOI format: '{doi_input}'. Format must be: 10.XXXX/suffix",
             doi_input=doi_input,
         )
 
     job_id = str(uuid.uuid4())
     with _jobs_lock:
-        _jobs[job_id] = {"status": "queued", "result": None, "graph_html": None, "error": None}
+        _jobs[job_id] = {
+            "status": "queued",
+            "step":   "Queued…",
+            "result": None,
+            "graph_html": None,
+            "error": None,
+        }
 
     thread = threading.Thread(
         target=_run_job,
@@ -147,7 +162,20 @@ def job_status(job_id: str):
         job = _jobs.get(job_id)
     if not job:
         return jsonify({"status": "not_found"}), 404
-    return jsonify({"status": job["status"]})
+    return jsonify({"status": job["status"], "step": job.get("step", "")})
+
+
+@app.route("/job/<job_id>/graph")
+def job_graph(job_id: str):
+    """Serve the PyVis graph HTML directly — used as iframe src."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if not job or job["status"] != "done":
+        return "Not ready", 404
+    graph_html = job.get("graph_html")
+    if not graph_html:
+        return "<html><body style='background:#1a202c;color:#8892a4;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;'>No citation data available from APIs for this DOI.</body></html>", 200
+    return Response(graph_html, mimetype="text/html")
 
 
 @app.route("/job/<job_id>/result")
@@ -172,14 +200,12 @@ def job_result(job_id: str):
             doi_val = job["result"].get("root_doi", "")
         return render_template("waiting.html", job_id=job_id, doi=doi_val)
 
-    result         = job["result"]
-    graph_html     = job["graph_html"]
-    papers         = result.get("papers", [])
-    retraction     = result.get("retraction", {})
-    root_doi       = result.get("root_doi", "")
-    analytics      = result.get("analytics", {})
-    high_risk_count  = sum(1 for p in papers if p.get("risk_level") == "HIGH")
-    retracted_count  = sum(1 for p in papers if p.get("is_retracted"))
+    result        = job["result"]
+    papers        = result.get("papers", [])
+    retraction    = result.get("retraction", {})
+    root_doi      = result.get("root_doi", "")
+    analytics     = result.get("analytics", {})
+    has_graph     = bool(job.get("graph_html"))
 
     return render_template(
         "results.html",
@@ -189,12 +215,12 @@ def job_result(job_id: str):
         root_doi=root_doi,
         retraction=retraction,
         papers=papers,
-        graph_html=graph_html,
+        has_graph=has_graph,
         node_count=result.get("node_count", 0),
         edge_count=result.get("edge_count", 0),
         analytics=analytics,
-        high_risk_count=high_risk_count,
-        retracted_count=retracted_count,
+        high_risk_count=sum(1 for p in papers if p.get("risk_level") == "HIGH"),
+        retracted_count=sum(1 for p in papers if p.get("is_retracted")),
     )
 
 
@@ -218,20 +244,20 @@ def export_csv(job_id: str):
     writer.writeheader()
     for p in papers:
         writer.writerow({
-            "doi": p.get("doi", ""),
-            "title": p.get("title") or "NULL",
-            "authors": p.get("authors") or "NULL",
-            "year": p.get("year") or "NULL",
-            "citation_count": p.get("citation_count") if p.get("citation_count") is not None else "NULL",
-            "depth_level": p.get("depth_level", ""),
-            "risk_score": p.get("risk_score", ""),
-            "risk_level": p.get("risk_level", ""),
-            "sentiment": p.get("sentiment", "Neutral"),
-            "is_retracted": p.get("is_retracted", False),
+            "doi":               p.get("doi", ""),
+            "title":             p.get("title") or "NULL",
+            "authors":           "; ".join(p.get("authors") or []) or "NULL",
+            "year":              p.get("year") or "NULL",
+            "citation_count":    p.get("citation_count") if p.get("citation_count") is not None else "NULL",
+            "depth_level":       p.get("depth_level", ""),
+            "risk_score":        p.get("risk_score", ""),
+            "risk_level":        p.get("risk_level", ""),
+            "sentiment":         p.get("sentiment", "Neutral"),
+            "is_retracted":      p.get("is_retracted", False),
             "high_risk_keyword": p.get("high_risk_keyword", False),
         })
 
-    safe_doi = root_doi.replace("/", "_")
+    safe_doi = root_doi.replace("/", "_").replace(":", "_")
     return Response(
         output.getvalue(),
         mimetype="text/csv",
