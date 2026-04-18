@@ -1,48 +1,77 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- Header -->
-<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; flex-wrap:wrap; gap:0.8rem; padding-top:1rem;">
-  <div>
-    <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:0.3rem;">Root DOI</div>
-    <div style="font-family:var(--mono); font-size:0.9rem; color:var(--primary);">{{ root_doi }}</div>
-    {% if papers and papers[0].title %}
-    <div style="font-size:0.88rem; color:var(--text); margin-top:0.3rem; max-width:640px; line-height:1.4;">{{ papers[0].title }}</div>
-    {% endif %}
-  </div>
-  <a href="/" class="btn btn-primary" style="flex-shrink:0;">← New Analysis</a>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  .kpi-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1.5rem; text-align:center; }
+  .kpi-score { font-size:4rem; font-weight:900; font-family:var(--mono); line-height:1; }
+  .kpi-label { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-top:0.4rem; }
+  .section-nav { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1.5rem; padding:0.7rem 1rem; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); }
+  .section-nav a { font-size:0.8rem; color:var(--muted); text-decoration:none; padding:0.3rem 0.7rem; border-radius:4px; border:1px solid transparent; }
+  .section-nav a:hover { border-color:var(--border); color:var(--text); }
+  .insight-card { display:flex; gap:0.9rem; padding:0.9rem 1.1rem; border-radius:var(--radius); border:1px solid; margin-bottom:0.7rem; }
+  .insight-card.danger  { background:rgba(229,62,62,0.07);  border-color:rgba(229,62,62,0.3);  }
+  .insight-card.warning { background:rgba(237,137,54,0.07); border-color:rgba(237,137,54,0.3); }
+  .insight-card.good    { background:rgba(72,187,120,0.07); border-color:rgba(72,187,120,0.3); }
+  .insight-card.info    { background:rgba(74,158,255,0.07); border-color:rgba(74,158,255,0.3); }
+  .insight-icon { font-size:1.4rem; line-height:1; flex-shrink:0; margin-top:0.1rem; }
+  .insight-text { font-size:0.87rem; line-height:1.6; color:var(--text); }
+  .top3-card { border:2px solid var(--orange); background:var(--orange-soft); border-radius:var(--radius); padding:1rem 1.1rem; margin-bottom:0.8rem; }
+  .top-card  { border:1px solid var(--border); background:var(--surface2); border-radius:var(--radius); padding:0.9rem 1.1rem; margin-bottom:0.6rem; }
+  .chart-wrap { position:relative; height:220px; }
+  .time-stat { text-align:center; padding:1rem; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); }
+  .time-stat-val { font-size:1.8rem; font-weight:800; font-family:var(--mono); }
+  .time-stat-sub { font-size:0.72rem; color:var(--muted); margin-top:0.2rem; }
+</style>
+
+<!-- ── Section navigation ─────────────────────────────────────────────── -->
+<div class="section-nav">
+  <span style="font-size:0.8rem;color:var(--muted);padding:0.3rem 0.4rem;font-weight:600;">Jump to:</span>
+  <a href="#overview">Overview</a>
+  <a href="#charts">Risk Analysis</a>
+  <a href="#graph">Network Graph</a>
+  {% if analytics and analytics.before_retraction + analytics.after_retraction > 0 %}<a href="#timeline">Timeline</a>{% endif %}
+  <a href="#top-risk">Top Risk Papers</a>
+  <a href="#insights">Insights</a>
+  <a href="#table">Full Table</a>
+  <div style="flex:1;"></div>
+  <a href="/" style="color:var(--primary);font-weight:600;">← New Analysis</a>
 </div>
 
-<!-- ── RETRACTION STATUS ─────────────────────────────────────────────── -->
-<div class="retraction-panel {{ 'retracted' if retraction.is_retracted else 'clean' }}">
-  <div class="retraction-status">
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 1 — OVERVIEW
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="overview">
+
+  <!-- Retraction banner -->
+  <div class="retraction-panel {{ 'retracted' if retraction.is_retracted else 'clean' }}" style="margin-bottom:1.2rem;">
+    <div class="retraction-status">
+      {% if retraction.is_retracted %}⚠ ROOT PAPER IS RETRACTED{% else %}✓ Not in Retraction Watch{% endif %}
+    </div>
     {% if retraction.is_retracted %}
-    ⚠ This paper has been RETRACTED
-    {% else %}
-    ✓ Not found in Retraction Watch — no retraction recorded
+    <div class="retraction-meta">
+      <div class="retraction-meta-item">
+        <label>Retraction Year</label><span>{{ retraction.year or "N/A" }}</span>
+      </div>
+      <div class="retraction-meta-item" style="flex:1;">
+        <label>Reason</label><span>{{ retraction.reason or "N/A" }}</span>
+      </div>
+    </div>
     {% endif %}
   </div>
-  {% if retraction.is_retracted %}
-  <div class="retraction-meta">
-    <div class="retraction-meta-item">
-      <label>Retraction Year</label>
-      <span>{{ retraction.year or "N/A" }}</span>
-    </div>
-    <div class="retraction-meta-item" style="flex:1;">
-      <label>Reason</label>
-      <span>{{ retraction.reason or "N/A" }}</span>
-    </div>
-  </div>
-  {% endif %}
-</div>
 
-<!-- ── ANALYTICS MODULE ──────────────────────────────────────────────── -->
-{% if analytics %}
-<div class="card" style="margin-bottom:1.2rem;">
-  <div class="section-title">Contamination Analytics</div>
+  <!-- KPI row -->
+  <div style="display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1fr 1fr; gap:0.8rem; margin-bottom:1.2rem;">
 
-  <!-- 5-stat grid -->
-  <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:0.8rem; margin-bottom:1.2rem;">
+    <!-- Headline contamination score -->
+    <div class="kpi-card" style="border:2px solid {% if analytics.contamination_score >= 60 %}var(--orange){% elif analytics.contamination_score >= 30 %}var(--yellow){% else %}var(--green){% endif %}; grid-row:1;">
+      <div class="kpi-score" style="color:{% if analytics.contamination_score >= 60 %}var(--orange){% elif analytics.contamination_score >= 30 %}var(--yellow){% else %}var(--green){% endif %};">{{ analytics.contamination_score }}</div>
+      <div class="kpi-label">Contamination Score / 100</div>
+      <div style="font-size:0.74rem;color:var(--muted);margin-top:0.5rem;line-height:1.5;">(HIGH×1 + MED×0.6 + LOW×0.3) / Total × 100</div>
+    </div>
+
     <div class="stat">
       <div class="stat-label">Papers in Network</div>
       <div class="stat-value" style="color:var(--primary);">{{ analytics.total }}</div>
@@ -55,7 +84,7 @@
     <div class="stat">
       <div class="stat-label">Safe (Opposing)</div>
       <div class="stat-value" style="color:var(--green);">{{ analytics.safe }}</div>
-      <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">Critique / Refute</div>
+      <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">Critiquing root</div>
     </div>
     <div class="stat">
       <div class="stat-label">Retracted in Network</div>
@@ -68,160 +97,216 @@
     </div>
   </div>
 
-  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
-    <!-- Level-wise spread -->
-    <div style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
-      <div class="card-title" style="margin-bottom:0.8rem;">Level-wise Spread</div>
-      {% for lvl, count in analytics.by_level.items() %}
-      <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.5rem;">
-        <span style="font-size:0.78rem; color:var(--muted); width:48px; flex-shrink:0;">Hop {{ lvl }}</span>
-        <div style="flex:1; background:var(--border); border-radius:2px; height:10px; overflow:hidden;">
-          <div style="height:100%; border-radius:2px;
-            background:{% if lvl==1 %}var(--primary){% elif lvl==2 %}var(--orange){% else %}var(--yellow){% endif %};
-            width:{% if analytics.total > 1 %}{{ [((count / analytics.total)*100)|int, 100]|min }}{% else %}0{% endif %}%;"></div>
-        </div>
-        <span style="font-size:0.82rem; font-weight:600; width:28px; text-align:right;">{{ count }}</span>
-      </div>
-      {% endfor %}
-    </div>
+  <!-- Root DOI + title -->
+  <div style="padding:0.9rem 1.1rem; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:1.2rem;">
+    <div style="font-size:0.72rem; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:0.3rem;">Analyzed DOI</div>
+    <div style="font-family:var(--mono); font-size:0.88rem; color:var(--primary); margin-bottom:{% if papers and papers[0].title %}0.4rem{% else %}0{% endif %};">{{ root_doi }}</div>
+    {% if papers and papers[0].title %}
+    <div style="font-size:0.92rem; font-weight:600; color:var(--text); line-height:1.4;">{{ papers[0].title }}</div>
+    {% endif %}
+  </div>
+</div>
 
-    <!-- Sentiment distribution -->
-    <div style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
-      <div class="card-title" style="margin-bottom:0.8rem;">Citation Sentiment</div>
-      {% for sentiment, count in analytics.by_sentiment.items() %}
-      <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.5rem;">
-        <span style="font-size:0.78rem; color:var(--muted); width:72px; flex-shrink:0;">{{ sentiment }}</span>
-        <div style="flex:1; background:var(--border); border-radius:2px; height:10px; overflow:hidden;">
-          <div style="height:100%; border-radius:2px;
-            background:{% if sentiment=='Endorsing' %}var(--red){% elif sentiment=='Critiquing' %}var(--green){% else %}var(--muted){% endif %};
-            width:{% if analytics.total > 0 %}{{ [((count / analytics.total)*100)|int, 100]|min }}{% else %}0{% endif %}%;"></div>
-        </div>
-        <span style="font-size:0.82rem; font-weight:600; width:28px; text-align:right;">{{ count }}</span>
-      </div>
-      {% endfor %}
-      <div style="font-size:0.7rem; color:var(--muted); margin-top:0.7rem; line-height:1.6; border-top:1px solid var(--border); padding-top:0.6rem;">
-        <strong style="color:var(--red);">Endorsing</strong> = relies on invalid findings → 1.5× risk<br>
-        <strong style="color:var(--muted);">Neutral</strong> = background citation → 1.0× risk<br>
-        <strong style="color:var(--green);">Critiquing</strong> = opposes / refutes → 0× risk (SAFE)
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 2 — RISK ANALYSIS CHARTS
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="charts" class="card" style="margin-bottom:1.2rem;">
+  <div class="section-title">Risk Analysis</div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.5rem;">
+
+    <!-- (a) Bar: Risk distribution -->
+    <div>
+      <div style="font-size:0.78rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.8rem;">Risk Distribution</div>
+      <div class="chart-wrap"><canvas id="chartRisk"></canvas></div>
+      <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.6rem; justify-content:center;">
+        <span style="font-size:0.7rem;color:var(--muted);">■ <span style="color:#ED8936">HIGH</span></span>
+        <span style="font-size:0.7rem;color:var(--muted);">■ <span style="color:#ECC94B">MEDIUM</span></span>
+        <span style="font-size:0.7rem;color:var(--muted);">■ <span style="color:#4a9eff">LOW</span></span>
+        <span style="font-size:0.7rem;color:var(--muted);">■ <span style="color:#48BB78">SAFE</span></span>
       </div>
     </div>
 
-    <!-- Risk distribution -->
-    <div style="background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:1rem;">
-      <div class="card-title" style="margin-bottom:0.8rem;">Risk Distribution</div>
-      {% set risk_data = [
-        ("HIGH",   analytics.high_risk,   "var(--orange)"),
-        ("MEDIUM", analytics.medium_risk, "var(--yellow)"),
-        ("LOW",    analytics.low_risk,    "#4a9eff"),
-        ("SAFE",   analytics.safe,        "var(--green)"),
-      ] %}
-      {% for label, count, color in risk_data %}
-      <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.5rem;">
-        <span style="font-size:0.78rem; color:var(--muted); width:52px; flex-shrink:0;">{{ label }}</span>
-        <div style="flex:1; background:var(--border); border-radius:2px; height:10px; overflow:hidden;">
-          <div style="height:100%; border-radius:2px; background:{{ color }};
-            width:{% if analytics.total > 0 %}{{ [((count / analytics.total)*100)|int, 100]|min }}{% else %}0{% endif %}%;"></div>
-        </div>
-        <span style="font-size:0.82rem; font-weight:600; width:28px; text-align:right;">{{ count }}</span>
+    <!-- (b) Pie: Sentiment distribution -->
+    <div>
+      <div style="font-size:0.78rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.8rem;">Citation Sentiment</div>
+      <div class="chart-wrap"><canvas id="chartSentiment"></canvas></div>
+      <div style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:0.6rem; line-height:1.6;">
+        <span style="color:var(--red);">■ Endorsing</span> = 1.5× risk ·
+        <span style="color:var(--muted);">■ Neutral</span> = 1.0× ·
+        <span style="color:var(--green);">■ Critiquing</span> = 0× (SAFE)
       </div>
-      {% endfor %}
-      <div style="margin-top:0.8rem; display:flex; gap:0.5rem;">
-        <div style="text-align:center; flex:1; background:var(--border); border-radius:4px; padding:0.4rem;">
-          <div style="font-size:1rem; font-weight:700;">{{ node_count }}</div>
-          <div style="font-size:0.68rem; color:var(--muted);">nodes</div>
-        </div>
-        <div style="text-align:center; flex:1; background:var(--border); border-radius:4px; padding:0.4rem;">
-          <div style="font-size:1rem; font-weight:700;">{{ edge_count }}</div>
-          <div style="font-size:0.68rem; color:var(--muted);">edges</div>
-        </div>
+    </div>
+
+    <!-- (c) Bar: Papers per hop -->
+    <div>
+      <div style="font-size:0.78rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.8rem;">Papers per Hop Level</div>
+      <div class="chart-wrap"><canvas id="chartHop"></canvas></div>
+      <div style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:0.6rem;">
+        Hop 1: direct citers · Hop 2: secondary · Hop 3: tertiary
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 3 — NETWORK GRAPH
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="graph" class="card" style="margin-bottom:1.2rem; padding:1rem;">
+  <div class="section-title">Contamination Network Graph</div>
+  <div class="legend" style="margin-bottom:0.8rem;">
+    <div class="legend-item"><div class="legend-dot" style="background:#3182CE;border:2px solid #90cdf4;width:14px;height:14px;"></div> Root (input DOI)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#E53E3E;width:14px;height:14px;"></div> Retracted</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ED8936;width:14px;height:14px;"></div> HIGH risk</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#ECC94B;width:14px;height:14px;"></div> MEDIUM risk</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4a9eff;width:14px;height:14px;"></div> LOW risk</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#48BB78;width:14px;height:14px;"></div> SAFE (opposes root)</div>
+  </div>
+  <div style="font-size:0.75rem; color:var(--muted); margin-bottom:0.6rem;">Node size = proportional to risk score. Hover nodes for details. Scroll to zoom.</div>
+  {% if has_graph %}
+  <iframe class="graph-frame" src="/job/{{ job_id }}/graph" allowfullscreen style="height:640px;"></iframe>
+  {% else %}
+  <div class="alert alert-info" style="margin:0;">No citation data returned by APIs for this DOI. Try a different DOI.</div>
+  {% endif %}
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 4 — TIME-BASED ANALYSIS
+     ══════════════════════════════════════════════════════════════════════ -->
+{% if analytics and (analytics.before_retraction + analytics.after_retraction) > 0 %}
+<div id="timeline" class="card" style="margin-bottom:1.2rem;">
+  <div class="section-title">Time-Based Contamination Analysis</div>
+  {% if retraction.year %}
+  <div style="font-size:0.85rem; color:var(--muted); margin-bottom:1rem;">
+    Retraction declared in <strong style="color:var(--text);">{{ retraction.year }}</strong>.
+    Showing how citation contamination spread before and after the retraction became known.
+  </div>
+  {% endif %}
+
+  <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-bottom:1rem;">
+    <div class="time-stat">
+      <div class="time-stat-val" style="color:var(--yellow);">{{ analytics.before_retraction }}</div>
+      <div class="time-stat-sub">Citations BEFORE retraction</div>
+      <div style="font-size:1.1rem; font-weight:700; color:var(--yellow); margin-top:0.4rem;">{{ analytics.before_pct }}%</div>
+    </div>
+    <div class="time-stat">
+      <div class="time-stat-val" style="color:var(--orange);">{{ analytics.after_retraction }}</div>
+      <div class="time-stat-sub">Citations AFTER retraction</div>
+      <div style="font-size:1.1rem; font-weight:700; color:var(--orange); margin-top:0.4rem;">{{ analytics.after_pct }}%</div>
+    </div>
+    <div class="time-stat" style="background:var(--surface); border-color:var(--border);">
+      <div style="font-size:0.82rem; color:var(--muted); margin-bottom:0.5rem;">Key Takeaway</div>
+      {% if analytics.after_pct >= 50 %}
+      <div style="font-size:0.88rem; color:var(--orange); font-weight:600; line-height:1.5;">
+        {{ analytics.after_pct }}% of contaminated citations occurred <em>after</em> the retraction —
+        the corrective signal failed to stop the spread.
+      </div>
+      {% else %}
+      <div style="font-size:0.88rem; color:var(--yellow); font-weight:600; line-height:1.5;">
+        {{ analytics.before_pct }}% of citations happened <em>before</em> retraction —
+        most spread was unavoidable given the timeline.
+      </div>
+      {% endif %}
     </div>
   </div>
 </div>
 {% endif %}
 
-<!-- ── CONTAMINATION GRAPH ────────────────────────────────────────────── -->
-<div class="card" style="margin-bottom:1.2rem; padding:1rem;">
-  <div class="section-title">Contamination Propagation Graph</div>
-  <div class="legend" style="margin-bottom:0.8rem;">
-    <div class="legend-item"><div class="legend-dot" style="background:#3182CE; border:2px solid #63b3ed;"></div> Root paper</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#e53e3e;"></div> Retracted</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#ed8936;"></div> High risk</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#ecc94b;"></div> Medium risk</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#4a9eff;"></div> Low risk</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#48bb78;"></div> Safe (opposes root)</div>
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 5 — TOP RISK PAPERS
+     ══════════════════════════════════════════════════════════════════════ -->
+{% if analytics and analytics.top10 %}
+<div id="top-risk" class="card" style="margin-bottom:1.2rem;">
+  <div class="section-title">⚠ Top Risk Papers — Most Likely to Propagate Misinformation</div>
+  <div class="alert alert-warning" style="margin-bottom:1rem;">
+    These papers endorse or rely on the root paper's findings. If the root is retracted, they carry invalid scientific assumptions forward into the literature.
   </div>
-  {% if has_graph %}
-  <iframe class="graph-frame" src="/job/{{ job_id }}/graph" allowfullscreen></iframe>
+
+  {% for p in analytics.top10 %}
+  {% if loop.index <= 3 %}
+  <div class="top3-card">
+    <div style="display:flex; align-items:flex-start; gap:1rem;">
+      <div style="font-size:2rem; font-weight:900; color:var(--orange); width:36px; text-align:center; flex-shrink:0; font-family:var(--mono);">#{{ loop.index }}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.4rem; align-items:center;">
+          <span class="badge badge-orange">{{ p.risk_level }}</span>
+          {% if p.is_retracted %}<span class="badge badge-red">RETRACTED</span>{% endif %}
+          {% if p.high_risk_keyword %}<span class="badge" style="background:#1a0e2d;color:#d6bcfa;border:1px solid #4a2080;">META/REVIEW</span>{% endif %}
+          <span class="badge" style="background:var(--red-soft);color:var(--red);border:1px solid #5a1a1a;">{{ p.sentiment }}</span>
+          <span style="font-family:var(--mono); font-size:0.82rem; font-weight:800; color:var(--orange); margin-left:auto;">Score: {{ "%.3f"|format(p.risk_score) }}</span>
+        </div>
+        <div style="font-size:0.9rem; font-weight:700; margin-bottom:0.3rem; line-height:1.4;">
+          {{ p.title or "Title unavailable" }}
+        </div>
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap; font-size:0.78rem; color:var(--muted);">
+          <span><a href="https://doi.org/{{ p.doi }}" target="_blank" style="font-family:var(--mono);color:var(--primary);">{{ p.doi }}</a></span>
+          {% if p.year %}<span>{{ p.year }}</span>{% endif %}
+          {% if p.citation_count is not none %}<span>{{ p.citation_count }} citations</span>{% endif %}
+          <span>Hop {{ p.depth_level }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
   {% else %}
-  <div class="alert alert-info" style="margin:0;">
-    No citation data returned by OpenCitations or Semantic Scholar for this DOI.
-    This happens if the paper is not yet indexed. Try a different DOI.
+  <div class="top-card">
+    <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+      <div style="font-size:0.85rem; font-weight:700; color:var(--muted); width:24px; text-align:center; flex-shrink:0;">#{{ loop.index }}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center; margin-bottom:0.2rem;">
+          <span class="badge badge-orange" style="font-size:0.68rem;">{{ p.risk_level }}</span>
+          {% if p.is_retracted %}<span class="badge badge-red" style="font-size:0.68rem;">RETRACTED</span>{% endif %}
+        </div>
+        <div style="font-size:0.84rem; font-weight:600; line-height:1.4; word-break:break-word;">{{ (p.title or "NULL")[:80] }}{% if p.title and p.title|length > 80 %}&hellip;{% endif %}</div>
+        <a href="https://doi.org/{{ p.doi }}" target="_blank" style="font-family:var(--mono);font-size:0.74rem;color:var(--primary);">{{ p.doi }}</a>
+      </div>
+      <div style="text-align:right; flex-shrink:0;">
+        <div style="font-family:var(--mono); font-weight:700; font-size:1rem; color:var(--orange);">{{ "%.3f"|format(p.risk_score) }}</div>
+        <div style="font-size:0.7rem; color:var(--muted);">{{ p.sentiment }}</div>
+      </div>
+    </div>
   </div>
   {% endif %}
+  {% endfor %}
 </div>
+{% endif %}
 
-<!-- ── TOP 10 HIGHEST RISK ────────────────────────────────────────────── -->
-{% if analytics and analytics.top10 %}
-<div class="card" style="margin-bottom:1.2rem;">
-  <div class="section-title">Top 10 Highest-Risk Contaminated Papers</div>
-  <div style="font-size:0.78rem; color:var(--muted); margin-bottom:1rem;">
-    Papers that endorse or rely on the root paper's findings — ranked by contamination risk score.
-    Papers that <strong style="color:var(--green);">oppose</strong> the root paper are excluded here (they are SAFE).
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 6 — AUTO-GENERATED INSIGHTS
+     ══════════════════════════════════════════════════════════════════════ -->
+{% if analytics and analytics.insights %}
+<div id="insights" class="card" style="margin-bottom:1.2rem;">
+  <div class="section-title">Auto-Generated Insights</div>
+  <div style="font-size:0.8rem; color:var(--muted); margin-bottom:1rem;">
+    Automatically derived from the citation network data. No manual interpretation.
   </div>
-  {% for p in analytics.top10 %}
-  <div style="display:flex; gap:1rem; padding:0.9rem 0; border-top:1px solid var(--border); align-items:flex-start;">
-    <div style="font-size:1.4rem; font-weight:800; color:var(--border); width:28px; flex-shrink:0; text-align:right; padding-top:0.1rem;">{{ loop.index }}</div>
-    <div style="flex:1; min-width:0;">
-      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.3rem;">
-        {% if p.risk_level in ("HIGH","RETRACTED") %}
-        <span class="badge badge-orange">{{ p.risk_level }}</span>
-        {% elif p.risk_level == "MEDIUM" %}
-        <span class="badge badge-yellow">MEDIUM</span>
-        {% else %}
-        <span class="badge badge-green">LOW</span>
-        {% endif %}
-        {% if p.is_retracted %}<span class="badge badge-red">RETRACTED</span>{% endif %}
-        {% if p.high_risk_keyword %}<span class="badge" style="background:#1a0e2d;color:#d6bcfa;border:1px solid #4a2080;">META/REVIEW</span>{% endif %}
-        <span class="badge" style="background:{% if p.sentiment=='Endorsing' %}var(--red-soft){% else %}var(--surface2){% endif %};color:{% if p.sentiment=='Endorsing' %}var(--red){% else %}var(--muted){% endif %};border:1px solid var(--border);">{{ p.sentiment }}</span>
-      </div>
-      <div style="font-size:0.87rem; font-weight:600; margin-bottom:0.2rem; word-break:break-word; line-height:1.4;">
-        {{ p.title or "Title unavailable (NULL)" }}
-      </div>
-      <div style="font-family:var(--mono); font-size:0.76rem; color:var(--primary);">
-        <a href="https://doi.org/{{ p.doi }}" target="_blank" rel="noopener">{{ p.doi }}</a>
-      </div>
-    </div>
-    <div style="text-align:right; flex-shrink:0;">
-      <div style="font-size:1.3rem; font-weight:800; font-family:var(--mono);
-        color:{% if p.risk_score >= 3 %}var(--orange){% elif p.risk_score >= 1.5 %}var(--yellow){% else %}#4a9eff{% endif %};">
-        {{ "%.3f"|format(p.risk_score) }}
-      </div>
-      <div style="font-size:0.7rem; color:var(--muted);">risk score</div>
-      <div style="font-size:0.74rem; color:var(--muted); margin-top:0.2rem;">Hop {{ p.depth_level }}</div>
-    </div>
+  {% for insight in analytics.insights %}
+  <div class="insight-card {{ insight.severity }}">
+    <div class="insight-icon">{{ insight.icon }}</div>
+    <div class="insight-text">{{ insight.text }}</div>
   </div>
   {% endfor %}
 </div>
 {% endif %}
 
-<!-- ── RISK RANKING TABLE ──────────────────────────────────────────────── -->
-<div class="card">
-  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+<!-- ══════════════════════════════════════════════════════════════════════
+     SECTION 7 — FULL RISK TABLE
+     ══════════════════════════════════════════════════════════════════════ -->
+<div id="table" class="card">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem;">
     <div>
       <div class="section-title" style="margin:0;border:none;padding:0;">Full Risk Ranking Table</div>
-      <div style="font-size:0.76rem; color:var(--muted); margin-top:0.3rem;">
-        Sorted by risk score — SAFE papers (opposing the root) are shown at the bottom in green.
+      <div style="font-size:0.75rem; color:var(--muted); margin-top:0.2rem;">
+        Sorted: HIGH risk first · SAFE papers at bottom · Use filters to explore
       </div>
     </div>
-    <a href="/job/{{ job_id }}/export" class="btn btn-primary" style="font-size:0.8rem; padding:0.4rem 0.9rem;">↓ Export CSV</a>
+    <a href="/job/{{ job_id }}/export" class="btn btn-primary" style="font-size:0.8rem;padding:0.4rem 1rem;">↓ Export CSV</a>
   </div>
 
   <!-- Filters -->
-  <div style="display:flex; gap:0.8rem; flex-wrap:wrap; margin-bottom:1rem; align-items:flex-end; padding:0.8rem; background:var(--surface2); border-radius:var(--radius); border:1px solid var(--border);">
+  <div style="display:flex; gap:0.7rem; flex-wrap:wrap; align-items:flex-end; padding:0.8rem; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:1rem;">
     <div>
-      <label class="input-label" style="margin-bottom:0.3rem;">Risk Level</label>
-      <select id="filter-risk" onchange="applyFilters()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.7rem;border-radius:var(--radius);font-size:0.82rem;">
+      <label class="input-label" style="margin-bottom:0.25rem;">Risk Level</label>
+      <select id="filter-risk" onchange="applyFilters()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.35rem 0.6rem;border-radius:var(--radius);font-size:0.8rem;">
         <option value="">All</option>
         <option value="HIGH">HIGH</option>
         <option value="MEDIUM">MEDIUM</option>
@@ -230,8 +315,8 @@
       </select>
     </div>
     <div>
-      <label class="input-label" style="margin-bottom:0.3rem;">Sentiment</label>
-      <select id="filter-sentiment" onchange="applyFilters()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.7rem;border-radius:var(--radius);font-size:0.82rem;">
+      <label class="input-label" style="margin-bottom:0.25rem;">Sentiment</label>
+      <select id="filter-sentiment" onchange="applyFilters()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.35rem 0.6rem;border-radius:var(--radius);font-size:0.8rem;">
         <option value="">All</option>
         <option value="Endorsing">Endorsing (risky)</option>
         <option value="Neutral">Neutral</option>
@@ -239,27 +324,26 @@
       </select>
     </div>
     <div>
-      <label class="input-label" style="margin-bottom:0.3rem;">Min Risk Score</label>
-      <input id="filter-min-risk" type="number" step="0.1" min="0" placeholder="0.0"
-             onchange="applyFilters()"
-             style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.6rem;border-radius:var(--radius);font-size:0.82rem;width:85px;" />
+      <label class="input-label" style="margin-bottom:0.25rem;">Min Risk Score</label>
+      <input id="filter-min-risk" type="number" step="0.1" min="0" placeholder="0.0" onchange="applyFilters()"
+        style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.35rem 0.6rem;border-radius:var(--radius);font-size:0.8rem;width:80px;" />
     </div>
     <div>
-      <label class="input-label" style="margin-bottom:0.3rem;">Year Range</label>
+      <label class="input-label" style="margin-bottom:0.25rem;">Year Range</label>
       <div style="display:flex;gap:0.3rem;align-items:center;">
         <input id="filter-year-min" type="number" placeholder="from" onchange="applyFilters()"
-               style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.5rem;border-radius:var(--radius);font-size:0.82rem;width:68px;" />
+          style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.35rem 0.5rem;border-radius:var(--radius);font-size:0.8rem;width:64px;" />
         <span style="color:var(--muted);">–</span>
         <input id="filter-year-max" type="number" placeholder="to" onchange="applyFilters()"
-               style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.4rem 0.5rem;border-radius:var(--radius);font-size:0.82rem;width:68px;" />
+          style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:0.35rem 0.5rem;border-radius:var(--radius);font-size:0.8rem;width:64px;" />
       </div>
     </div>
-    <button onclick="resetFilters()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:0.4rem 0.8rem;border-radius:var(--radius);font-size:0.78rem;cursor:pointer;margin-top:auto;">Reset</button>
-    <span id="filter-count" style="font-size:0.78rem;color:var(--muted);margin-top:auto;"></span>
+    <button onclick="resetFilters()" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:0.35rem 0.7rem;border-radius:var(--radius);font-size:0.76rem;cursor:pointer;margin-top:auto;">Reset</button>
+    <span id="filter-count" style="font-size:0.76rem;color:var(--muted);margin-top:auto;"></span>
   </div>
 
   {% if not papers %}
-  <div class="alert alert-info" style="margin:0;">No citation data available from APIs.</div>
+  <div class="alert alert-info">No citation data from APIs.</div>
   {% else %}
   <div class="table-wrap">
     <table id="results-table">
@@ -283,134 +367,185 @@
             data-sentiment="{{ p.sentiment }}"
             data-score="{{ p.risk_score }}"
             data-year="{{ p.year or 0 }}"
-            style="{% if p.risk_level == 'SAFE' %}background: rgba(72,187,120,0.05);{% endif %}">
-          <td style="color:var(--muted);font-size:0.78rem;">{{ loop.index }}</td>
+            style="{% if p.risk_level == 'SAFE' %}background:rgba(72,187,120,0.04);{% endif %}">
+          <td style="color:var(--muted);font-size:0.76rem;">{{ loop.index }}</td>
           <td class="title-cell">
             {% if p.title %}
-            <span style="font-size:0.82rem; line-height:1.4;">{{ p.title[:90] }}{% if p.title|length > 90 %}&hellip;{% endif %}</span>
-            {% else %}
-            <span class="null-val">NULL</span>
-            {% endif %}
+            <span style="font-size:0.81rem;line-height:1.4;">{{ p.title[:88] }}{% if p.title|length > 88 %}&hellip;{% endif %}</span>
+            {% else %}<span class="null-val">NULL</span>{% endif %}
           </td>
           <td class="doi-cell">
-            <a href="https://doi.org/{{ p.doi }}" target="_blank" rel="noopener">{{ p.doi[:30] }}{% if p.doi|length > 30 %}&hellip;{% endif %}</a>
+            <a href="https://doi.org/{{ p.doi }}" target="_blank" rel="noopener">{{ p.doi[:28] }}{% if p.doi|length > 28 %}&hellip;{% endif %}</a>
           </td>
-          <td style="font-family:var(--mono); font-weight:700;
-            color:{% if p.risk_level == 'SAFE' %}var(--green){% elif p.risk_score >= 3 %}var(--orange){% elif p.risk_score >= 1.5 %}var(--yellow){% else %}#4a9eff{% endif %};">
+          <td style="font-family:var(--mono);font-weight:700;
+            color:{% if p.risk_level=='SAFE' %}var(--green){% elif p.risk_score>=3 %}var(--orange){% elif p.risk_score>=1.5 %}var(--yellow){% else %}#4a9eff{% endif %};">
             {{ "%.3f"|format(p.risk_score) }}
           </td>
           <td>
-            {% if p.risk_level == "SAFE" %}
-            <span class="badge badge-green">SAFE</span>
-            {% elif p.risk_level in ("HIGH","RETRACTED") %}
-            <span class="badge badge-orange">HIGH</span>
-            {% elif p.risk_level == "MEDIUM" %}
-            <span class="badge badge-yellow">MED</span>
-            {% else %}
-            <span class="badge" style="background:rgba(74,158,255,0.1);color:#4a9eff;border:1px solid #1a3a6a;">LOW</span>
-            {% endif %}
+            {% if p.risk_level == "SAFE" %}<span class="badge badge-green">SAFE</span>
+            {% elif p.risk_level in ("HIGH","RETRACTED") %}<span class="badge badge-orange">HIGH</span>
+            {% elif p.risk_level == "MEDIUM" %}<span class="badge badge-yellow">MED</span>
+            {% else %}<span class="badge" style="background:rgba(74,158,255,0.1);color:#4a9eff;border:1px solid #1a3a6a;">LOW</span>{% endif %}
           </td>
-          <td style="text-align:center; color:var(--muted);">{{ p.depth_level }}</td>
+          <td style="text-align:center;color:var(--muted);">{{ p.depth_level }}</td>
           <td>
-            {% if p.sentiment == "Endorsing" %}
-            <span style="color:var(--red);font-size:0.8rem;font-weight:700;">Endorsing</span>
-            {% elif p.sentiment == "Critiquing" %}
-            <span style="color:var(--green);font-size:0.8rem;font-weight:700;">Critiquing</span>
-            {% else %}
-            <span style="color:var(--muted);font-size:0.8rem;">Neutral</span>
-            {% endif %}
+            {% if p.sentiment == "Endorsing" %}<span style="color:var(--red);font-size:0.79rem;font-weight:700;">Endorsing</span>
+            {% elif p.sentiment == "Critiquing" %}<span style="color:var(--green);font-size:0.79rem;font-weight:700;">Critiquing</span>
+            {% else %}<span style="color:var(--muted);font-size:0.79rem;">Neutral</span>{% endif %}
           </td>
           <td style="text-align:right;">{% if p.citation_count is not none %}{{ p.citation_count }}{% else %}<span class="null-val">—</span>{% endif %}</td>
           <td>{% if p.year %}{{ p.year }}{% else %}<span class="null-val">—</span>{% endif %}</td>
           <td>
-            {% if p.is_retracted %}<span class="badge badge-red" style="font-size:0.66rem;">RETRACT</span>{% endif %}
-            {% if p.high_risk_keyword %}<span class="badge" style="font-size:0.66rem;background:#1a0e2d;color:#d6bcfa;border:1px solid #4a2080;">REVIEW</span>{% endif %}
-            {% if p.risk_level == "SAFE" %}<span style="font-size:0.75rem;color:var(--green);">✓ Opposes</span>{% endif %}
+            {% if p.is_retracted %}<span class="badge badge-red" style="font-size:0.64rem;">RETRACT</span>{% endif %}
+            {% if p.high_risk_keyword %}<span class="badge" style="font-size:0.64rem;background:#1a0e2d;color:#d6bcfa;border:1px solid #4a2080;">REVIEW</span>{% endif %}
+            {% if p.risk_level == "SAFE" %}<span style="font-size:0.72rem;color:var(--green);">✓</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <div id="no-results-msg" style="display:none;" class="alert alert-info" style="margin-top:1rem;">No papers match the current filters.</div>
+  <div id="no-results-msg" style="display:none;" class="alert alert-info" style="margin-top:0.8rem;">No papers match these filters.</div>
   {% endif %}
 </div>
 
-<!-- Methodology -->
+<!-- Methodology footer -->
 <div class="card" style="margin-top:1.2rem;">
   <details>
-    <summary style="cursor:pointer; font-size:0.88rem; font-weight:600; color:var(--muted);">Contamination Model &amp; Methodology</summary>
+    <summary style="cursor:pointer;font-size:0.86rem;font-weight:600;color:var(--muted);">Risk Model &amp; Methodology</summary>
     <div class="method-body">
-      <p><strong>Core principle:</strong> A paper is contaminated only if it <em>endorses, relies on, or builds upon</em> the retracted paper's findings. Papers that <em>oppose, refute, or provide counter-evidence</em> are classified as SAFE — they actively correct the scientific record.</p>
-      <p><strong>Full Risk Formula:</strong></p>
-      <pre style="background:var(--surface2);padding:0.8rem 1rem;border-radius:6px;font-size:0.82rem;color:var(--primary);margin:0.5rem 0 1rem;overflow-x:auto;">risk_score = depth_weight × sentiment_weight × log(1 + citation_count)
+      <p><strong>Risk Formula:</strong></p>
+      <pre style="background:var(--surface2);padding:0.7rem 1rem;border-radius:6px;font-size:0.8rem;color:var(--primary);overflow-x:auto;">risk_score = (1/hop) × sentiment_weight × log(1 + citation_count)
 if retracted → × 2.0
-
-depth_weight:     {hop1: 1.0, hop2: 0.5, hop3: 0.2}
-sentiment_weight: {Endorsing: 1.5, Neutral: 1.0, Critiquing: 0.0}</pre>
-      <p><strong>Sentiment Classification Logic:</strong></p>
-      <ul style="line-height:2;">
-        <li><strong style="color:var(--red);">Endorsing</strong> — confirms, replicates, or builds on the root paper's claims. Weight = 1.5×</li>
-        <li><strong style="color:var(--muted);">Neutral</strong> — cites as background context without endorsing claims. Weight = 1.0×</li>
-        <li><strong style="color:var(--green);">Critiquing</strong> — negative/null results, explicit refutation, counter-evidence, RCTs disproving the hypothesis. Weight = 0.0× → <strong>SAFE</strong></li>
-      </ul>
-      <p><strong>High-Risk Keywords (meta/review flagging):</strong> <code>systematic review</code>, <code>meta-analysis</code>, <code>pooled analysis</code>, <code>umbrella review</code></p>
-      <p><strong>Data Sources:</strong> OpenCitations COCI (citation edges) · Semantic Scholar (metadata) · Retraction Watch (60,936 indexed DOIs)</p>
+sentiment:  {Endorsing: 1.5,  Neutral: 1.0,  Critiquing: 0.0}
+hop_weight: {hop1: 1.0,  hop2: 0.5,  hop3: 0.33}</pre>
+      <p><strong>Contamination Score KPI:</strong> <code>(HIGH×1.0 + MEDIUM×0.6 + LOW×0.3) / total × 100</code></p>
+      <p><strong>Sentiment Classification:</strong> Endorsing = confirms/replicates findings · Neutral = background citation · Critiquing = negative trial / explicit refutation (→ SAFE)</p>
+      <p><strong>Data Sources:</strong> OpenCitations COCI · Semantic Scholar · Retraction Watch (60,936 indexed DOIs)</p>
     </div>
   </details>
 </div>
 
+<!-- ── Chart.js scripts ───────────────────────────────────────────────── -->
 <script>
+const CHART_DEFAULTS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: { bodyFont: { family: "'JetBrains Mono', monospace" }, titleFont: { family: 'inherit' } },
+  },
+};
+
+const DARK_GRID = { color: 'rgba(45,50,80,0.8)' };
+const DARK_TICK = { color: '#8892a4', font: { size: 11 } };
+
+// (a) Risk distribution bar chart
+new Chart(document.getElementById('chartRisk'), {
+  type: 'bar',
+  data: {
+    labels: ['HIGH', 'MEDIUM', 'LOW', 'SAFE'],
+    datasets: [{
+      data: [{{ analytics.high_risk }}, {{ analytics.medium_risk }}, {{ analytics.low_risk }}, {{ analytics.safe }}],
+      backgroundColor: ['#ED8936cc', '#ECC94Bcc', '#4a9effcc', '#48BB78cc'],
+      borderColor:     ['#ED8936',   '#ECC94B',   '#4a9eff',   '#48BB78'],
+      borderWidth: 1.5,
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    ...CHART_DEFAULTS,
+    scales: {
+      x: { grid: DARK_GRID, ticks: DARK_TICK },
+      y: { grid: DARK_GRID, ticks: { ...DARK_TICK, stepSize: 1 }, beginAtZero: true },
+    },
+  },
+});
+
+// (b) Sentiment pie chart
+new Chart(document.getElementById('chartSentiment'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Endorsing', 'Neutral', 'Critiquing'],
+    datasets: [{
+      data: [
+        {{ analytics.by_sentiment.Endorsing }},
+        {{ analytics.by_sentiment.Neutral }},
+        {{ analytics.by_sentiment.Critiquing }},
+      ],
+      backgroundColor: ['#E53E3Ecc', '#718096cc', '#48BB78cc'],
+      borderColor:     ['#E53E3E',   '#718096',   '#48BB78'],
+      borderWidth: 1.5,
+    }],
+  },
+  options: {
+    ...CHART_DEFAULTS,
+    cutout: '55%',
+    plugins: {
+      ...CHART_DEFAULTS.plugins,
+      legend: { display: true, position: 'bottom', labels: { color: '#8892a4', font: { size: 11 }, padding: 10, boxWidth: 12 } },
+    },
+  },
+});
+
+// (c) Hop level bar chart
+new Chart(document.getElementById('chartHop'), {
+  type: 'bar',
+  data: {
+    labels: ['Root (0)', 'Hop 1', 'Hop 2', 'Hop 3'],
+    datasets: [{
+      data: [1, {{ analytics.by_level[1] }}, {{ analytics.by_level[2] }}, {{ analytics.by_level[3] }}],
+      backgroundColor: ['#3182CEcc', '#4f8ef7cc', '#ED8936cc', '#ECC94Bcc'],
+      borderColor:     ['#3182CE',   '#4f8ef7',   '#ED8936',   '#ECC94B'],
+      borderWidth: 1.5,
+      borderRadius: 4,
+    }],
+  },
+  options: {
+    ...CHART_DEFAULTS,
+    scales: {
+      x: { grid: DARK_GRID, ticks: DARK_TICK },
+      y: { grid: DARK_GRID, ticks: { ...DARK_TICK, stepSize: 1 }, beginAtZero: true },
+    },
+  },
+});
+
+// ── Table filter logic ────────────────────────────────────────────────
 function applyFilters() {
-  const riskFilter = document.getElementById('filter-risk').value;
-  const sentFilter = document.getElementById('filter-sentiment').value;
-  const minScore   = parseFloat(document.getElementById('filter-min-risk').value) || 0;
-  const yearMin    = parseInt(document.getElementById('filter-year-min').value) || 0;
-  const yearMax    = parseInt(document.getElementById('filter-year-max').value) || 9999;
+  const rf = document.getElementById('filter-risk').value;
+  const sf = document.getElementById('filter-sentiment').value;
+  const mn = parseFloat(document.getElementById('filter-min-risk').value) || 0;
+  const y1 = parseInt(document.getElementById('filter-year-min').value) || 0;
+  const y2 = parseInt(document.getElementById('filter-year-max').value) || 9999;
 
   const rows = document.querySelectorAll('#results-tbody tr');
-  let visible = 0;
-
-  rows.forEach(row => {
-    const risk      = row.dataset.risk || '';
-    const sentiment = row.dataset.sentiment || '';
-    const score     = parseFloat(row.dataset.score) || 0;
-    const year      = parseInt(row.dataset.year) || 0;
-
-    // Normalize RETRACTED → HIGH for filter purposes
-    const effectiveRisk = risk === 'RETRACTED' ? 'HIGH' : risk;
-
-    const show =
-      (!riskFilter || effectiveRisk === riskFilter) &&
-      (!sentFilter || sentiment === sentFilter) &&
-      (score >= minScore) &&
-      (year === 0 || (year >= yearMin && year <= yearMax));
-
-    row.style.display = show ? '' : 'none';
-    if (show) visible++;
+  let vis = 0;
+  rows.forEach(r => {
+    const risk = r.dataset.risk === 'RETRACTED' ? 'HIGH' : (r.dataset.risk || '');
+    const show = (!rf || risk === rf) &&
+                 (!sf || r.dataset.sentiment === sf) &&
+                 (parseFloat(r.dataset.score) >= mn) &&
+                 (parseInt(r.dataset.year) === 0 || (parseInt(r.dataset.year) >= y1 && parseInt(r.dataset.year) <= y2));
+    r.style.display = show ? '' : 'none';
+    if (show) vis++;
   });
-
-  const countEl = document.getElementById('filter-count');
-  countEl.textContent = `Showing ${visible} of ${rows.length} papers`;
-
-  const noMsg = document.getElementById('no-results-msg');
-  if (noMsg) noMsg.style.display = visible === 0 ? 'block' : 'none';
+  document.getElementById('filter-count').textContent = `Showing ${vis} of ${rows.length}`;
+  const nm = document.getElementById('no-results-msg');
+  if (nm) nm.style.display = vis === 0 ? 'block' : 'none';
 }
 
 function resetFilters() {
-  ['filter-risk','filter-sentiment','filter-min-risk','filter-year-min','filter-year-max']
-    .forEach(id => {
-      const el = document.getElementById(id);
-      if (el.tagName === 'SELECT') el.value = '';
-      else el.value = '';
-    });
+  ['filter-risk','filter-sentiment','filter-min-risk','filter-year-min','filter-year-max'].forEach(id => {
+    const el = document.getElementById(id);
+    el.tagName === 'SELECT' ? el.value = '' : el.value = '';
+  });
   applyFilters();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   const rows = document.querySelectorAll('#results-tbody tr');
-  const countEl = document.getElementById('filter-count');
-  if (countEl && rows.length) countEl.textContent = `Showing ${rows.length} of ${rows.length} papers`;
+  const c = document.getElementById('filter-count');
+  if (c && rows.length) c.textContent = `Showing ${rows.length} of ${rows.length}`;
 });
 </script>
 

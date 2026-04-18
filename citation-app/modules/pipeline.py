@@ -134,7 +134,8 @@ def run_analysis(
         "high_risk_keyword": is_high_risk_by_keywords(root_meta.get("title"), root_meta.get("abstract")),
     }
     all_papers = [root_entry] + ranked
-    analytics  = compute_analytics(all_papers)
+    retraction_year = retraction.get("year") if retraction.get("is_retracted") else None
+    analytics  = compute_analytics(all_papers, retraction_year=retraction_year)
 
     step("Ranking complete. Preparing visualization…")
 
