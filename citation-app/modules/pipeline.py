@@ -87,7 +87,7 @@ def run_analysis(
             is_retracted=doi_is_retracted,
         )
         high_risk_keyword = is_high_risk_by_keywords(title, abstract)
-        risk_level = classify_risk_level(risk_score, high_risk_keyword)
+        risk_level = classify_risk_level(risk_score, high_risk_keyword, sentiment)
 
         papers.append({
             "doi":               doi,
@@ -125,7 +125,9 @@ def run_analysis(
         "depth_level":       0,
         "risk_score":        root_rs,
         "risk_level":        "RETRACTED" if retraction.get("is_retracted") else classify_risk_level(
-            root_rs, is_high_risk_by_keywords(root_meta.get("title"), root_meta.get("abstract"))
+            root_rs,
+            is_high_risk_by_keywords(root_meta.get("title"), root_meta.get("abstract")),
+            root_sent,
         ),
         "sentiment":         root_sent,
         "is_retracted":      retraction.get("is_retracted", False),
